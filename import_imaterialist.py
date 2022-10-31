@@ -8,6 +8,23 @@ import json
 from io import BytesIO
 import time
 
+EXPORTEDJSON_trainingPath = "trainingData.json"
+EXPORTEDJSON_validationPath = "validationData.json"
+
+EXPORTEDJSON_filepath = {'training': EXPORTEDJSON_trainingPath, 'validation': EXPORTEDJSON_validationPath}
+
+RAWDATA_trainingPath = "iMaterialist/fgvc4_iMat.train.data.json"
+RAWDATA_validationPath = "iMaterialist/fgvc4_iMat.validation.data.json"
+
+RAWDATA_filepath = {'training': RAWDATA_trainingPath, 'validation': RAWDATA_validationPath}
+
+
+def timeformat(secs):
+    if type(secs) is not int: secs = int(secs)
+    # Formats an integer secs into a HH:MM:SS format.
+    return f"{str(secs // 3600).zfill(2)}:{str((secs // 60) % 60).zfill(2)}:{str(secs % 60).zfill(2)}"
+
+
 def get_task_map() -> dict[int, str]:
     taskMapPath = "iMaterialist/fgvc4_iMat.task_map.json"
 
@@ -23,7 +40,7 @@ def get_task_map() -> dict[int, str]:
     return result
 
 
-def get_apparel_class_map(task_map = None) -> dict[int, int]:
+def get_apparel_class_map(task_map=None) -> dict[int, int]:
     if (task_map == None):
         task_map = get_task_map()
 
@@ -41,28 +58,28 @@ def get_apparel_class_map(task_map = None) -> dict[int, int]:
     return result
 
 
-def get_image_file(url_list, image_size = 256):
+def get_image_file(url_list, image_size = 256, verbose = 0):
     if type(url_list) is str:
         url_list = [url_list]
 
-    print(f"Looking for working URL...")
+    if verbose > 0: print(f"Looking for working URL...")
     for url in url_list:
-        print(f"Trying URL {url}...")
+        if verbose > 1: print(f"Trying URL {url}...")
         time.sleep(0.1)
         try:
-            res = requests.get(url, stream=True, timeout=5)
+            res = requests.get(url, stream=True, timeout=1)
 
         except requests.exceptions.ConnectionError:
-            print(f"Connection Error")
+            if verbose > 1: print(f"Connection Error")
             continue
         except requests.exceptions.ReadTimeout:
-            print("Timed out")
+            if verbose > 1: print("Timed out")
             continue
         except OSError:
-            print(f"OSError")
+            if verbose > 1: print(f"OSError")
             continue
         except ValueError:
-            print(f"Value Error")
+            if verbose > 1: print(f"Value Error")
             continue
 
         try:
@@ -72,26 +89,50 @@ def get_image_file(url_list, image_size = 256):
                 img_arr = tf.image.resize(images=img_arr, size=(image_size, image_size)
                                           , method='bicubic', antialias=True)
 
-                img_arr = img_arr / 255
+                img_arr = np.clip(img_arr / 255, a_min=0.0, a_max=1.0)
 
-                print(f"Image retrieved successfully")
+                if verbose > 0: print(f"Image retrieved successfully")
                 return img_arr
             else:
                 continue
         except OSError:
-            print(f"OSError")
+            if verbose > 1: print(f"OSError")
             continue
         except ValueError:
-            print(f"Value Error")
+            if verbose > 1: print(f"Value Error")
             continue
 
-    print("No image found")
+    if verbose > 0: print("No image found")
     return np.empty(shape=(1, 1))
 
-def import_data(small_dataset = True, verbose = False):
-    trainingPath = "iMaterialist/fgvc4_iMat.train.data.json"
 
-    with open(trainingPath, 'r') as f:
+def export_dataset_as_json(df, data_type='training'):
+    path = EXPORTEDJSON_filepath[data_type]
+
+    print(f"Saving df file as {path}...")
+    df.to_json(path_or_buf=path)
+    print(f"Saved")
+
+
+def import_dataset_from_json(data_type='training'):
+    path = EXPORTEDJSON_filepath[data_type]
+
+    try:
+        print(f"Importing {path}...")
+        df = pd.read_json(path)
+        print(f"{path} found")
+
+        # df['imageData'] = tf.convert_to_tensor(df['imageData'])
+        return df
+    except:
+        print(f"Error, returning None")
+        return None
+
+
+def import_data(data_type='training', dataset_size=100, verbose=2):
+    path = RAWDATA_filepath[data_type]
+
+    with open(path, 'r') as f:
         data = json.loads(f.read())
 
     # import the images dataframe and the annotations dataframe, to be merged later
@@ -99,25 +140,24 @@ def import_data(small_dataset = True, verbose = False):
     df_images = pd.json_normalize(data, "images", ["url", "imageId"],
                                   record_prefix='_', errors='ignore')
 
-    print("Image IDs retrieved")
-    if verbose: print(f"Printing df_images...\n{df_images}")
+    if verbose > 1: print("Image IDs retrieved")
+    if verbose > 2: print(f"Printing df_images...\n{df_images}")
 
     df_annotations = pd.json_normalize(data, "annotations", ["labelId", "imageId", "taskId"],
                                        record_prefix='_', errors='ignore')
 
-    print("Image annotations retrieved")
-    if verbose: print(f"Printing df_annotations...\n{df_annotations}")
+    if verbose > 1: print("Image annotations retrieved")
+    if verbose > 2: print(f"Printing df_annotations...\n{df_annotations}")
 
     df = pd.merge(df_images, df_annotations, on="_imageId")
     df = df[['_imageId', '_url', '_taskId', '_labelId']]
 
-    #print(type(df.loc[0, '_url']))
-    print("Image IDs and annotations merged")
+    # print(type(df.loc[0, '_url']))
+    if verbose > 1: print("Image IDs and annotations merged")
 
-    if small_dataset:
-        l = 5
-        print(f"Dataset size reduced to {l}")
-        df = df[0:l]
+    if dataset_size > 0:
+        if verbose > 0: print(f"Dataset size reduced to {dataset_size}")
+        df = df[0:dataset_size]
 
     # remove the underscores from the column names
     df.rename(
@@ -136,28 +176,69 @@ def import_data(small_dataset = True, verbose = False):
     # TODO:
     # - create a new variable for the apparel class (each taskid belongs to one and only one apparel class)
     # - download the image from the first URL that's responsive
+    # - when the dataset is constructed, save it locally (as json?)
 
     # apparel class
     apparel_class_map = get_apparel_class_map()
     df['apparel_class'] = df['taskId'].apply(lambda x: apparel_class_map[x])
 
     # download images
-    print("Downloading images...")
+    if verbose > 0: print("Downloading images...")
+
+    if verbose > 1:
+        firstStart = time.time()
+        I = len(df)
+
     imagedata_out = list()
-    for index, row in df.iterrows():
+
+    for i, row in df.iterrows():
         imagedata_out.append(get_image_file(row['url']))
 
-    print("Images downloaded")
-    print(type(imagedata_out))
-    print(imagedata_out)
+        if verbose > 1:
+            i_ = i + 1
 
-    if verbose: print(f"Printing df...\n{df}")
+            end = time.time()
+            eta = int(((end - firstStart) / (i_) * (I-i_)))
+
+            if (i_ == 1):
+                print("\n")
+
+            endch = ""
+            if i_ == I:
+                endch = "\n"
+            
+            print(f"\r[{i_ / I * 100:.0f}%] ETA: {timeformat(eta)}", end=endch)
+
+    if verbose > 0: print("Images downloaded")
+    if verbose > 1: print(f"Took {timeformat(time.time() - firstStart)}")
+
+    #print(type(imagedata_out))
+    #print(imagedata_out)
+
+    if verbose > 1: print("Attaching images to df['imageData']...")
+    df['imageData'] = imagedata_out
+    if verbose > 1: print("Images successfully attached to df['imageData']")
+
+    if verbose > 0: print("Removing data entries with blank images...")
+    goodimages_mask = (df['imageData'].apply(lambda x: x.shape) != (1, 1))
+    df = df[goodimages_mask]
+    if verbose > 0: print(
+        f"Data entries with blank images successfully removed (Dataset is now {np.sum(goodimages_mask)} entries)")
+
+    export_dataset_as_json(df, data_type)
+
+    if verbose > 2: print(f"Printing df...\n{df}")
     return df
+
 
 Data = import_data()
 
 print(f"First row:\n{Data.iloc[0]}")
 
+print(f"Testing import...")
+ImportedData = import_dataset_from_json()
+
+print(f"First row:\n{ImportedData.iloc[0]}")
 """
 taskMap = get_task_map()
 print(f"task map:\n{taskMap}")
