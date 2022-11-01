@@ -1,3 +1,5 @@
+import os.path
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -18,6 +20,7 @@ RAWDATA_validationPath = "iMaterialist/fgvc4_iMat.validation.data.json"
 
 RAWDATA_filepath = {'training': RAWDATA_trainingPath, 'validation': RAWDATA_validationPath}
 
+DATASET_numberOfEntries = 200
 
 def timeformat(secs):
     if type(secs) is not int: secs = int(secs)
@@ -45,10 +48,10 @@ def get_apparel_class_map(task_map=None) -> dict[int, int]:
         task_map = get_task_map()
 
     string_to_int = {
-        'outerwear': 1,
-        'dress': 2,
-        'pants': 3,
-        'shoe': 4
+        'outerwear': 0,
+        'dress': 1,
+        'pants': 2,
+        'shoe': 3
     }
 
     result = dict()
@@ -129,7 +132,10 @@ def import_dataset_from_json(data_type='training'):
         return None
 
 
-def import_data(data_type='training', dataset_size=100, verbose=2):
+def import_rawdata(data_type='training', dataset_size=None, verbose=2):
+    if dataset_size is None:
+        dataset_size = DATASET_numberOfEntries
+
     path = RAWDATA_filepath[data_type]
 
     with open(path, 'r') as f:
@@ -156,7 +162,7 @@ def import_data(data_type='training', dataset_size=100, verbose=2):
     if verbose > 1: print("Image IDs and annotations merged")
 
     if dataset_size > 0:
-        if verbose > 0: print(f"Dataset size reduced to {dataset_size}")
+        if verbose > 0: print(f"Dataset size reduced to <={dataset_size} (it will be ~{(dataset_size * 0.7):.0f} entries)")
         df = df[0:dataset_size]
 
     # remove the underscores from the column names
@@ -206,7 +212,7 @@ def import_data(data_type='training', dataset_size=100, verbose=2):
             endch = ""
             if i_ == I:
                 endch = "\n"
-            
+
             print(f"\r[{i_ / I * 100:.0f}%] ETA: {timeformat(eta)}", end=endch)
 
     if verbose > 0: print("Images downloaded")
@@ -231,15 +237,42 @@ def import_data(data_type='training', dataset_size=100, verbose=2):
     return df
 
 
-Data = import_data()
+def get_dataset(data_type='training', verbose = 1):
+    dataset = None
+    if os.path.exists(EXPORTEDJSON_filepath[data_type]):
+        if verbose > 0: print(f"File {EXPORTEDJSON_filepath[data_type]} present, attempting import...")
+        dataset = import_dataset_from_json(data_type)
+    else:
+        if verbose > 0: print(f"File {EXPORTEDJSON_filepath[data_type]} not present, getting raw data...")
+        dataset = import_rawdata()
 
+    if dataset is not None:
+        if verbose > 0:
+            a = dataset['imageData']
+            list_to_print = list()
+            while True:
+                try:
+                    list_to_print.append(str(len(a)))
+                    a = a[0]
+                except:
+                    break
+
+            print(f"Images shape is ({', '.join(list_to_print)})")
+
+    return dataset
+
+#import_rawdata()
+#import_rawdata('validation')
+#Data = get_dataset()
+
+"""
 print(f"First row:\n{Data.iloc[0]}")
 
 print(f"Testing import...")
 ImportedData = import_dataset_from_json()
 
 print(f"First row:\n{ImportedData.iloc[0]}")
-"""
+
 taskMap = get_task_map()
 print(f"task map:\n{taskMap}")
 
