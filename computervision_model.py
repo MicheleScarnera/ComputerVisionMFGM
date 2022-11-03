@@ -16,7 +16,7 @@ from keras.callbacks import CSVLogger, EarlyStopping
 import matplotlib.pyplot as plt
 
 
-def get_untrained_apparel_model(image_size = 256, kernel_size = 3, maxpooling_size = 4, verbose = 1):
+def get_untrained_apparel_model(image_size = 256, kernel_size = 3, maxpooling_size = 2, verbose = 1):
     kernel_square = (kernel_size, kernel_size)
     maxpooling_square = (maxpooling_size, maxpooling_size)
 
@@ -42,8 +42,41 @@ def get_untrained_apparel_model(image_size = 256, kernel_size = 3, maxpooling_si
 
     return model
 
-def train_apparel_model(model, batch_size = 16, epochs = 5, verbose = 2):
-    """
+def train_apparel_model(model, image_size = 256, batch_size = 4, epochs = 5, verbose = 2):
+    if verbose > 1:
+        print(f"Creating {import_imaterialist.IMAGES_filepath['training']} and {import_imaterialist.IMAGES_filepath['validation']} generators...")
+
+    train_datagen = ImageDataGenerator(rescale = 1. / 255)
+
+    train_generator = train_datagen.flow_from_directory(
+        import_imaterialist.IMAGES_filepath['training'],
+        target_size=(image_size, image_size),
+        batch_size=batch_size,
+        class_mode='categorical'
+    )
+
+    validation_datagen = ImageDataGenerator(rescale=1. / 255)
+
+    validation_generator = validation_datagen.flow_from_directory(
+        import_imaterialist.IMAGES_filepath['validation'],
+        target_size=(image_size, image_size),
+        batch_size=batch_size,
+        class_mode='categorical'
+    )
+
+    if verbose > 1:
+        for data_batch, labels_batch in train_generator:
+            print(f"train_generator created with shape {data_batch.shape} and labels shape {labels_batch.shape}")
+            break
+        
+        for data_batch, labels_batch in validation_generator:
+            print(f"validation_generator created with shape {data_batch.shape} and labels shape {labels_batch.shape}")
+            break
+
+    #callbacks
+    if verbose > 1:
+        print("Defining callbacks...")
+
     earlystop = EarlyStopping(monitor='val_acc',
                               min_delta=0.001,
                               patience=6,
@@ -51,44 +84,20 @@ def train_apparel_model(model, batch_size = 16, epochs = 5, verbose = 2):
                               mode='auto')
 
     csv_logger = CSVLogger('training.log', separator=",", append=False)
-    """
 
-    if verbose > 1:
-        print(f"Opening {import_imaterialist.EXPORTEDJSON_trainingPath}...")
+    history = model.fit(train_generator,
+                        steps_per_epoch=train_generator.samples / batch_size,
+                        epochs=epochs,
+                        validation_data=validation_generator,
+                        validation_steps=validation_generator.samples / batch_size,
+                        callbacks=[earlystop, csv_logger]
+                        )
 
-    with open(import_imaterialist.EXPORTEDJSON_trainingPath) as read_content:
-        jsonfile = json.load(read_content)
+    return history
 
-    if verbose > 1:
-        print(f"{import_imaterialist.EXPORTEDJSON_trainingPath} opened...")
 
-    if verbose > 1:
-        print("Getting train_images...")
-
-    #print(jsonfile['imageData'])
-    train_images = tf.convert_to_tensor(list(jsonfile['imageData'].values()))
-    if verbose > 1:
-        print(f"train_images obtained with shape {train_images.shape}")
-
-    if verbose > 2:
-        print(train_images)
-
-    if verbose > 1:
-        print("Getting train_labels...")
-    train_labels = to_categorical(list(jsonfile['apparel_class'].values()))
-    if verbose > 1:
-        print(f"train_labels obtained with {train_labels.shape[1]} classes")
-
-    if verbose > 2:
-        print(train_labels)
-
-    jsonfile = None
-
-    model.fit(train_images, train_labels, epochs = epochs, batch_size = batch_size) #, callbacks = [earlystop, csv_logger]
-
+import_imaterialist.get_dataset()
+import_imaterialist.get_dataset('validation')
 
 apparel_model = get_untrained_apparel_model()
-
-#dataset = import_imaterialist.get_dataset()
-
 train_apparel_model(apparel_model)

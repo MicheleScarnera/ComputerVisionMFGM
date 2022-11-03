@@ -15,6 +15,11 @@ EXPORTEDJSON_validationPath = "validationData.json"
 
 EXPORTEDJSON_filepath = {'training': EXPORTEDJSON_trainingPath, 'validation': EXPORTEDJSON_validationPath}
 
+IMAGES_trainingPath = "trainingData"
+IMAGES_validationPath = "validationData"
+
+IMAGES_filepath = {'training': IMAGES_trainingPath, 'validation': IMAGES_validationPath}
+
 RAWDATA_trainingPath = "iMaterialist/fgvc4_iMat.train.data.json"
 RAWDATA_validationPath = "iMaterialist/fgvc4_iMat.validation.data.json"
 
@@ -43,7 +48,7 @@ def get_task_map() -> dict[int, str]:
     return result
 
 
-def get_apparel_class_map(task_map=None) -> dict[int, int]:
+def get_apparel_class_map(task_map=None) -> dict[int, str]:
     if (task_map == None):
         task_map = get_task_map()
 
@@ -56,12 +61,12 @@ def get_apparel_class_map(task_map=None) -> dict[int, int]:
 
     result = dict()
     for key, value in task_map.items():
-        result[key] = string_to_int[value.split(":")[0]]
+        result[key] = value.split(":")[0] #string_to_int[value.split(":")[0]]
 
     return result
 
 
-def get_image_file(url_list, image_size = 256, verbose = 0):
+def save_image_file(path,url_list, verbose = 0):
     if type(url_list) is str:
         url_list = [url_list]
 
@@ -86,16 +91,10 @@ def get_image_file(url_list, image_size = 256, verbose = 0):
             continue
 
         try:
-            if res.ok:
-                img_arr = iio.imread(BytesIO(res.content))
+            if res.ok and '<' not in res.text[0:20] and len(res.content) > 5000:
+                open(path, 'wb').write(res.content)
 
-                img_arr = tf.image.resize(images=img_arr, size=(image_size, image_size)
-                                          , method='bicubic', antialias=True)
-
-                img_arr = np.clip(img_arr / 255, a_min=0.0, a_max=1.0)
-
-                if verbose > 0: print(f"Image retrieved successfully")
-                return img_arr
+                return True
             else:
                 continue
         except OSError:
@@ -106,7 +105,7 @@ def get_image_file(url_list, image_size = 256, verbose = 0):
             continue
 
     if verbose > 0: print("No image found")
-    return np.empty(shape=(1, 1))
+    return False #np.empty(shape=(1, 1))
 
 
 def export_dataset_as_json(df, data_type='training'):
@@ -158,7 +157,6 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2):
     df = pd.merge(df_images, df_annotations, on="_imageId")
     df = df[['_imageId', '_url', '_taskId', '_labelId']]
 
-    # print(type(df.loc[0, '_url']))
     if verbose > 1: print("Image IDs and annotations merged")
 
     if dataset_size > 0:
@@ -179,26 +177,40 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2):
     df['taskId'] = df['taskId'].astype(dtype=int)
     df['labelId'] = df['labelId'].astype(dtype=int)
 
-    # TODO:
-    # - create a new variable for the apparel class (each taskid belongs to one and only one apparel class)
-    # - download the image from the first URL that's responsive
-    # - when the dataset is constructed, save it locally (as json?)
-
     # apparel class
     apparel_class_map = get_apparel_class_map()
     df['apparel_class'] = df['taskId'].apply(lambda x: apparel_class_map[x])
 
     # download images
+    folder_path = IMAGES_filepath[data_type]
+
+    try:
+        os.mkdir(folder_path)
+    except FileExistsError as error:
+        if verbose > 1: print(f"{folder_path} folder already exists")
+    else:
+        if verbose > 1: print(f"{folder_path} folder created")
+
+    for key in np.unique(list(apparel_class_map.values())):
+        try:
+            other_path = f"{folder_path}/{key}"
+            os.mkdir(other_path)
+        except FileExistsError as error:
+            if verbose > 1: print(f"{other_path} folder already exists")
+        else:
+            if verbose > 1: print(f"{other_path} folder created")
+
     if verbose > 0: print("Downloading images...")
 
     if verbose > 1:
         firstStart = time.time()
         I = len(df)
 
-    imagedata_out = list()
+    image_found = np.empty(shape = len(df), dtype = bool)
 
     for i, row in df.iterrows():
-        imagedata_out.append(get_image_file(row['url']))
+        image_path = f"{IMAGES_filepath[data_type]}/{row['apparel_class']}/{row['imageId']}.jpg"
+        image_found[i] = save_image_file(image_path, row['url'])
 
         if verbose > 1:
             i_ = i + 1
@@ -218,18 +230,12 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2):
     if verbose > 0: print("Images downloaded")
     if verbose > 1: print(f"Took {timeformat(time.time() - firstStart)}")
 
-    #print(type(imagedata_out))
-    #print(imagedata_out)
+    df['imageWasFound'] = image_found
 
-    if verbose > 1: print("Attaching images to df['imageData']...")
-    df['imageData'] = imagedata_out
-    if verbose > 1: print("Images successfully attached to df['imageData']")
-
-    if verbose > 0: print("Removing data entries with blank images...")
-    goodimages_mask = (df['imageData'].apply(lambda x: x.shape) != (1, 1))
-    df = df[goodimages_mask]
+    if verbose > 0: print("Removing data entries with no images...")
+    df = df[image_found]
     if verbose > 0: print(
-        f"Data entries with blank images successfully removed (Dataset is now {np.sum(goodimages_mask)} entries)")
+        f"Data entries with blank images successfully removed (Dataset is now {np.sum(image_found)} entries)")
 
     export_dataset_as_json(df, data_type)
 
@@ -244,20 +250,7 @@ def get_dataset(data_type='training', verbose = 1):
         dataset = import_dataset_from_json(data_type)
     else:
         if verbose > 0: print(f"File {EXPORTEDJSON_filepath[data_type]} not present, getting raw data...")
-        dataset = import_rawdata()
-
-    if dataset is not None:
-        if verbose > 0:
-            a = dataset['imageData']
-            list_to_print = list()
-            while True:
-                try:
-                    list_to_print.append(str(len(a)))
-                    a = a[0]
-                except:
-                    break
-
-            print(f"Images shape is ({', '.join(list_to_print)})")
+        dataset = import_rawdata(data_type)
 
     return dataset
 
