@@ -114,6 +114,7 @@ def export_dataset_as_json(df, data_type='training'):
 
     print(f"Saving df file as {path}...")
     df.to_json(path_or_buf=path)
+    df.to_csv(path_or_buf=f"{data_type}Data.csv")
     print(f"Saved")
 
 
@@ -173,14 +174,15 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
         df = df[0:dataset_size]
 
     # remove the underscores from the column names
-    df.rename(
-        columns={
+    nomenclature ={
             '_imageId': 'imageId',
             '_url': 'url',
             '_taskId': 'taskId',
             '_labelId': 'labelId'
         }
-        , inplace=True)
+
+    df.rename(columns=nomenclature, inplace=True)
+    df_images.rename(columns=nomenclature, inplace=True)
 
     df['imageId'] = df['imageId'].astype(dtype=int)
     df['taskId'] = df['taskId'].astype(dtype=int)
@@ -217,9 +219,14 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
 
     image_found = np.empty(shape = len(df), dtype = bool)
 
+    #TODO: iterating over df and not df_images is inefficient. however, df_images does not have the apparel_class column.
     for i, row in df.iterrows():
         image_path = f"{IMAGES_filepath[data_type]}/{row['apparel_class']}/{row['imageId']}.jpg"
-        image_found[i] = save_image_file(image_path, row['url'])
+
+        if not os.path.isfile(image_path):
+            image_found[i] = save_image_file(image_path, row['url'])
+        else:
+            image_found[i] = True
 
         if verbose > 1:
             i_ = i + 1
@@ -247,7 +254,7 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
         f"Data entries with blank images successfully removed (Dataset is now {np.sum(image_found)} entries)")
 
     #keep only the columns we care about. 'url' and 'imageWasFound' are a waste of space
-    df.drop(columns=['url', 'imageWasFound'])
+    df.drop(columns=['url', 'imageWasFound'], inplace=True)
 
     export_dataset_as_json(df, data_type)
 
