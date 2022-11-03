@@ -10,6 +10,8 @@ import json
 from io import BytesIO
 import time
 
+DATASET_numberOfEntries = 200
+
 EXPORTEDJSON_trainingPath = "trainingData.json"
 EXPORTEDJSON_validationPath = "validationData.json"
 
@@ -24,8 +26,6 @@ RAWDATA_trainingPath = "iMaterialist/fgvc4_iMat.train.data.json"
 RAWDATA_validationPath = "iMaterialist/fgvc4_iMat.validation.data.json"
 
 RAWDATA_filepath = {'training': RAWDATA_trainingPath, 'validation': RAWDATA_validationPath}
-
-DATASET_numberOfEntries = 200
 
 def timeformat(secs):
     if type(secs) is not int: secs = int(secs)
@@ -92,7 +92,8 @@ def save_image_file(path,url_list, verbose = 0):
 
         try:
             if res.ok and '<' not in res.text[0:20] and len(res.content) > 5000:
-                open(path, 'wb').write(res.content)
+                with open(path, 'wb') as f:
+                    f.write(res.content)
 
                 return True
             else:
@@ -131,7 +132,15 @@ def import_dataset_from_json(data_type='training'):
         return None
 
 
-def import_rawdata(data_type='training', dataset_size=None, verbose=2):
+def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.DataFrame:
+    """
+    Forcibly creates a new [data_type]Data.json file. Returns the created dataframe.
+
+    :param data_type: Either 'training' or 'validation'. 'test' is currently not supported
+    :param dataset_size: How many entries to look into. If not specified, DATASET_numberOfEntries is used
+    :param verbose: Level of verbosity.
+    :return: a pandas.DataFrame
+    """
     if dataset_size is None:
         dataset_size = DATASET_numberOfEntries
 
@@ -237,13 +246,26 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2):
     if verbose > 0: print(
         f"Data entries with blank images successfully removed (Dataset is now {np.sum(image_found)} entries)")
 
+    #keep only the columns we care about. 'url' and 'imageWasFound' are a waste of space
+    df.drop(columns=['url', 'imageWasFound'])
+
     export_dataset_as_json(df, data_type)
 
     if verbose > 2: print(f"Printing df...\n{df}")
     return df
 
 
-def get_dataset(data_type='training', verbose = 1):
+def get_dataset(data_type='training', verbose = 1) -> pd.DataFrame:
+    """
+    Returns a pandas.DataFrame containing the non-image data.
+    This dataframe is stored in the [...]Data.json file.
+    If the file is not found, images are downloaded and the file is created.
+
+    :param data_type: Either 'training' or 'validation'. 'test' is currently not supported
+    :param verbose: Level of verbosity.
+    :return: a pandas.DataFrame
+    """
+
     dataset = None
     if os.path.exists(EXPORTEDJSON_filepath[data_type]):
         if verbose > 0: print(f"File {EXPORTEDJSON_filepath[data_type]} present, attempting import...")

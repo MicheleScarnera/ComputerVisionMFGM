@@ -16,7 +16,13 @@ from keras.callbacks import CSVLogger, EarlyStopping
 import matplotlib.pyplot as plt
 
 
-def get_untrained_apparel_model(image_size = 256, kernel_size = 3, maxpooling_size = 2, verbose = 1):
+def get_untrained_apparel_model(
+        image_size = 256,
+        kernel_size = 3,
+        maxpooling_size = 2,
+        dropout_rate = 0.5,
+        verbose = 1):
+
     kernel_square = (kernel_size, kernel_size)
     maxpooling_square = (maxpooling_size, maxpooling_size)
 
@@ -31,6 +37,7 @@ def get_untrained_apparel_model(image_size = 256, kernel_size = 3, maxpooling_si
     model.add(layers.Conv2D(128, kernel_square, padding='same', activation='relu'))
     model.add(layers.MaxPooling2D(maxpooling_square))
     model.add(layers.Flatten())
+    model.add(layers.Dropout(rate=dropout_rate))
     model.add(layers.Dense(512, activation='relu'))
     model.add(layers.Dense(4, activation='softmax'))
 
