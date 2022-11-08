@@ -4,6 +4,7 @@ import tensorflow as tf
 import pandas as pd
 
 import import_imaterialist
+import computervision_parameters as PARAMS
 
 from keras.utils import to_categorical
 from keras import layers
@@ -14,7 +15,6 @@ from keras import optimizers
 from keras.models import load_model
 from keras.callbacks import CSVLogger, EarlyStopping
 import matplotlib.pyplot as plt
-
 
 def get_untrained_apparel_model(
         image_size = 256,
@@ -49,14 +49,20 @@ def get_untrained_apparel_model(
 
     return model
 
-def train_apparel_model(model, image_size = 256, batch_size = 4, epochs = 5, verbose = 2):
+def train_apparel_model(
+        model,
+        image_size = 256,
+        batch_size = 4,
+        epochs = 5,
+        verbose = 2):
+
     if verbose > 1:
-        print(f"Creating {import_imaterialist.IMAGES_filepath['training']} and {import_imaterialist.IMAGES_filepath['validation']} generators...")
+        print(f"Creating {PARAMS.IMAGES_filepath['training']} and {PARAMS.IMAGES_filepath['validation']} generators...")
 
     train_datagen = ImageDataGenerator(rescale = 1. / 255)
 
     train_generator = train_datagen.flow_from_directory(
-        import_imaterialist.IMAGES_filepath['training'],
+        PARAMS.IMAGES_filepath['training'],
         target_size=(image_size, image_size),
         batch_size=batch_size,
         class_mode='categorical'
@@ -65,7 +71,7 @@ def train_apparel_model(model, image_size = 256, batch_size = 4, epochs = 5, ver
     validation_datagen = ImageDataGenerator(rescale=1. / 255)
 
     validation_generator = validation_datagen.flow_from_directory(
-        import_imaterialist.IMAGES_filepath['validation'],
+        PARAMS.IMAGES_filepath['validation'],
         target_size=(image_size, image_size),
         batch_size=batch_size,
         class_mode='categorical'
@@ -99,6 +105,25 @@ def train_apparel_model(model, image_size = 256, batch_size = 4, epochs = 5, ver
                         validation_steps=validation_generator.samples / batch_size,
                         callbacks=[earlystop, csv_logger]
                         )
+
+    #saving model
+    folder_path = PARAMS.MISC_models_path
+    file_path = f"{folder_path}/{PARAMS.CV_MODELS_APPAREL_filename}"
+
+    if verbose > 0:
+        print(f"Saving apparel model to {file_path}...")
+
+    try:
+        os.mkdir(folder_path)
+    except FileExistsError as error:
+        if verbose > 1: print(f"{folder_path} folder already exists")
+    else:
+        if verbose > 1: print(f"{folder_path} folder created")
+
+    model.save(file_path)
+
+    if verbose > 0:
+        print(f"{file_path} saved")
 
     return history
 
