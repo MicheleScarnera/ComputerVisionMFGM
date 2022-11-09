@@ -22,9 +22,29 @@ def dictformat(dict) -> str:
     result = ",\n".join(result)
     return result
 
-def get_task_map() -> dict[int, str]:
+def get_tasks() -> list:
     """
-    :return: Returns a dict[int, str] that maps the taskId (i.e. 12) to the name of the task (i.e. dress:length)
+
+    :return:
+    """
+    taskMapPath = PARAMS.RAWDATA_taskMapPath
+
+    with open(taskMapPath, 'r') as f:
+        taskMap_raw = json.loads(f.read())
+
+    mappings = taskMap_raw['taskInfo']
+    result = list()
+
+    for l in mappings:
+        result.append(l['taskName'])
+
+    result.sort()
+
+    return result
+
+def get_task_map() -> dict[str, str]:
+    """
+    :return: Returns a dict[str, str] that maps the taskId (i.e. 12) to the name of the task (i.e. dress:length)
     """
     taskMapPath = PARAMS.RAWDATA_taskMapPath
 
@@ -35,15 +55,31 @@ def get_task_map() -> dict[int, str]:
     result = dict()
 
     for l in mappings:
-        result[int(l['taskId'])] = l['taskName']
+        result[l['taskId']] = l['taskName']
 
     return result
 
+def get_label_map() -> dict[str, str]:
+    """
+    :return: Returns a dict[str, str] that maps the labelId (i.e. 3) to the name of the task (i.e. black)
+    """
+    label_map_path = PARAMS.RAWDATA_labelMapPath
 
-def get_apparel_class_map(task_map=None) -> dict[int, str]:
+    with open(label_map_path, 'r') as f:
+        label_map_path_raw = json.loads(f.read())
+
+    mappings = label_map_path_raw['labelInfo']
+    result = dict()
+
+    for l in mappings:
+        result[l['labelId']] = l['labelName']
+
+    return result
+
+def get_apparel_class_map(task_map=None) -> dict[str, str]:
     """
     :param task_map: If already computed, you can specify the task map.
-    :return: Returns a dict[int, str] that maps the taskId (i.e. 12) to the name of the apparel class (i.e. dress)
+    :return: Returns a dict[str, str] that maps the taskId (i.e. 12) to the name of the apparel class (i.e. dress)
     """
     if (task_map == None):
         task_map = get_task_map()
@@ -80,7 +116,7 @@ def get_apparel_to_all_tasks_map(values_are_names=True) -> dict[str, list]:
         key = spl[0]
 
         if values_are_names:
-            value = spl[1]
+            value = mapping['taskName']
         else:
             value = mapping['taskId']
 
@@ -105,19 +141,25 @@ def import_dataset_from_json(data_type='training'):
     except:
         return None
 
-def get_task_to_all_values_map(training_dataset=None) -> dict[int, list]:
+def get_task_to_all_values_map(training_dataset=None, task_map=None, label_map=None) -> dict[int, list]:
     """
     :param training_dataset: If already computed, you can provide the training set.
-    :return:Returns a dict[int, list] that maps the task ID to all of its possible label values.
+    :return:Returns a dict[int, list] that maps the task name to all of its possible label values.
     """
     if training_dataset is None:
         training_dataset = import_dataset_from_json()
 
+    if task_map is None:
+        task_map = get_task_map()
+
+    if label_map is None:
+        label_map = get_label_map()
+
     result = dict()
 
     for i, row in training_dataset.iterrows():
-        key = row['taskId']
-        value = row['labelId']
+        key = task_map[row['taskId']]
+        value = label_map[row['labelId']]
 
         try:
             result[key].add(value)
@@ -127,8 +169,10 @@ def get_task_to_all_values_map(training_dataset=None) -> dict[int, list]:
 
     return result
 
+"""
 print("Apparel Class -> All its tasks:")
 print(dictformat(get_apparel_to_all_tasks_map()))
 print(" ")
 print("Task ID -> All its labels:")
 print(dictformat(get_task_to_all_values_map()))
+"""

@@ -43,7 +43,7 @@ def get_untrained_apparel_model(
 
     if verbose > 0: model.summary()
 
-    model.compile(loss='binary_crossentropy',
+    model.compile(loss='categorical_crossentropy',
                   optimizer=optimizers.RMSprop(learning_rate=1e-4),
                   metrics=['acc'])
 

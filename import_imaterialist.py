@@ -69,6 +69,10 @@ def import_dataset_from_json(data_type='training'):
         df = pd.read_json(path)
         print(f"{path} found")
 
+        df['imageId'] = df['imageId'].astype(dtype=str)
+        df['taskId'] = df['taskId'].astype(dtype=str)
+        df['labelId'] = df['labelId'].astype(dtype=str)
+
         # df['imageData'] = tf.convert_to_tensor(df['imageData'])
         return df
     except:
@@ -113,7 +117,7 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
     if verbose > 1: print("Image IDs and annotations merged")
 
     if dataset_size > 0:
-        if verbose > 0: print(f"Dataset size reduced to <={dataset_size} (it will be ~{(dataset_size * 0.7):.0f} entries)")
+        if verbose > 0: print(f"Dataset will have ~{(dataset_size * 0.7):.0f} entries")
         df = df[0:dataset_size]
 
     # remove the underscores from the column names
@@ -127,13 +131,21 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
     df.rename(columns=nomenclature, inplace=True)
     df_images.rename(columns=nomenclature, inplace=True)
 
-    df['imageId'] = df['imageId'].astype(dtype=int)
-    df['taskId'] = df['taskId'].astype(dtype=int)
-    df['labelId'] = df['labelId'].astype(dtype=int)
+    df['imageId'] = df['imageId'].astype(dtype=str)
+    df['taskId'] = df['taskId'].astype(dtype=str)
+    df['labelId'] = df['labelId'].astype(dtype=str)
 
     # apparel class
     apparel_class_map = MISC.get_apparel_class_map()
-    df['apparel_class'] = df['taskId'].apply(lambda x: apparel_class_map[x])
+    df['apparelClass'] = df['taskId'].apply(lambda x: apparel_class_map[x])
+    
+    # task name
+    task_map = MISC.get_task_map()
+    df['taskName'] = df['taskId'].apply(lambda x: task_map[x])
+
+    # label name
+    label_map = MISC.get_label_map()
+    df['labelName'] = df['labelId'].apply(lambda x: label_map[x])
 
     # download images
     folder_path = PARAMS.IMAGES_filepath[data_type]
@@ -161,16 +173,19 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
         I = len(df)
         expected = np.zeros(shape=I)
 
-    image_found = np.empty(shape = len(df), dtype = bool)
+    image_found = np.full(shape = len(df), fill_value=True, dtype = bool)
+    df['imageName'] = ""
 
-    #TODO: iterating over df and not df_images is inefficient. however, df_images does not have the apparel_class column.
+    #TODO: iterating over df and not df_images is inefficient. however, df_images does not have the apparelClass column.
     for i, row in df.iterrows():
-        image_path = f"{PARAMS.IMAGES_filepath[data_type]}/{row['apparel_class']}/{row['imageId']}.jpg"
+        image_path = f"{PARAMS.IMAGES_filepath[data_type]}/{row['apparelClass']}/{row['imageId']}.jpg"
 
         if not os.path.isfile(image_path):
             image_found[i] = save_image_file(image_path, row['url'])
         else:
             image_found[i] = True
+
+        row['imageName'] = f"{row['imageId']}.jpg"
 
         if verbose > 1:
             i_ = i + 1
