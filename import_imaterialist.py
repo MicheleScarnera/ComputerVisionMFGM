@@ -80,15 +80,36 @@ def import_dataset_from_json(data_type='training'):
         return None
 
 
-def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.DataFrame:
+def import_rawdata(data_type='training', dataset_size=None, freeloader_mode=True, verbose=2) -> pd.DataFrame:
     """
     Forcibly creates a new [data_type]Data.json file. Returns the created dataframe.
 
     :param data_type: Either 'training' or 'validation'. 'test' is currently not supported
     :param dataset_size: How many entries to look into. If not specified, DATASET_numberOfEntries is used
+    :param freeloader_mode: If enough images are already present, no downloading is attempted and the json is constructed around the available files
     :param verbose: Level of verbosity.
     :return: a pandas.DataFrame
     """
+    folder_path = PARAMS.IMAGES_filepath[data_type]
+    if verbose > 0: print(f"### IMPORTING DATA INTO {folder_path} ###\n")
+
+    if freeloader_mode:
+        if verbose > 0: print("""Checking if freeloading is possible...""")
+
+        f = []
+        for (dirpath, dirnames, filenames) in os.walk(folder_path):
+            f.extend(filenames)
+            break
+
+        n = 20
+        if len(f) < n:
+            if verbose > 0: print(f"Less than {n} files found in {folder_path}, FREELOADING has been DISABLED\n")
+            freeloader_mode = False
+        else:
+            if verbose > 0: print(f"""{n} or more files found in {folder_path}, FREELOADING has been kept ENABLED
+NOTE: If you want to download more images than you have locally, delete the present image files or set freeloader_mode to False
+""")
+
     if dataset_size is None:
         dataset_size = PARAMS.DATASET_numberOfEntries
 
@@ -116,9 +137,13 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
 
     if verbose > 1: print("Image IDs and annotations merged")
 
-    if dataset_size > 0:
-        if verbose > 0: print(f"Dataset will have ~{(dataset_size * 0.7):.0f} entries")
-        df = df[0:dataset_size]
+    if freeloader_mode:
+        if verbose > 0: print(f"Freeloader mode is enabled, dataset size will be of however many images are found")
+    else:
+        if dataset_size > 0:
+            if verbose > 1: print("Freeloader mode is disabled, hence images that weren't found will be downloaded")
+            if verbose > 0: print(f"Dataset will have ~{(dataset_size * 0.7):.0f} entries")
+            df = df[0:dataset_size]
 
     # remove the underscores from the column names
     nomenclature = {
@@ -147,9 +172,6 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
     label_map = MISC.get_label_map()
     df['labelName'] = df['labelId'].apply(lambda x: label_map[x])
 
-    # download images
-    folder_path = PARAMS.IMAGES_filepath[data_type]
-
     try:
         os.mkdir(folder_path)
     except FileExistsError as error:
@@ -157,6 +179,7 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
     else:
         if verbose > 1: print(f"{folder_path} folder created")
 
+    """
     for key in np.unique(list(apparel_class_map.values())):
         try:
             other_path = f"{folder_path}/{key}"
@@ -165,49 +188,60 @@ def import_rawdata(data_type='training', dataset_size=None, verbose=2) -> pd.Dat
             if verbose > 1: print(f"{other_path} folder already exists")
         else:
             if verbose > 1: print(f"{other_path} folder created")
+    """
 
-    if verbose > 0: print("Downloading images...")
+    if (not freeloader_mode) and verbose > 0: print("Downloading images...")
 
     if verbose > 1:
         firstStart = time.time()
         I = len(df)
         expected = np.zeros(shape=I)
 
-    image_found = np.full(shape = len(df), fill_value=True, dtype = bool)
-    df['imageName'] = ""
+    image_path_func = lambda x: f"{folder_path}/{x}.jpg"
 
-    #TODO: iterating over df and not df_images is inefficient. however, df_images does not have the apparelClass column.
-    for i, row in df.iterrows():
-        image_path = f"{PARAMS.IMAGES_filepath[data_type]}/{row['apparelClass']}/{row['imageId']}.jpg"
+    df['imageName'] = df['imageId'].apply(lambda x: f"{x}.jpg")
 
-        if not os.path.isfile(image_path):
+    # which image files are present?
+    # (i tried doing this with pandas.apply() instead of this "dumber" approach,
+    # but i don't think os.path.isfile() really works in there
+    possible_image_ids = np.unique(df['imageId'])
+    was_found = dict()
+    for id in possible_image_ids:
+        was_found[id] = os.path.isfile(image_path_func(id))
+
+    image_found = df['imageId'].apply(lambda x: was_found.get(x, False))
+
+    if (not freeloader_mode) and verbose > 1: print(f"Before downloading any new images, {np.sum(image_found)} images were present")
+
+    if not freeloader_mode:
+        # TODO: iterating over df and not df_images is inefficient. however, df_images does not have the apparelClass column.
+        for i, row in df[~image_found].iterrows():
+            image_path = image_path_func(row['imageId'])  # {row['apparelClass']}/
+
             image_found[i] = save_image_file(image_path, row['url'])
-        else:
-            image_found[i] = True
 
-        row['imageName'] = f"{row['imageId']}.jpg"
+            if verbose > 1:
+                i_ = i + 1
 
-        if verbose > 1:
-            i_ = i + 1
+                end = time.time()
+                average_time = (end - firstStart) / i_
+                eta = int((average_time * (I - i_)))
+                expected[i] = average_time * I
 
-            end = time.time()
-            average_time = (end - firstStart) / i_
-            eta = int((average_time * (I-i_)))
-            expected[i] = average_time * I
+                endch = ""
+                if i_ == I:
+                    endch = "\n"
 
-            endch = ""
-            if i_ == I:
-                endch = "\n"
+                print("\r                                                                                         ",
+                      end="")
+                print(f"\r[{i_ / I * 100:.0f}%] ETA: {MISC.timeformat(eta)}", end=endch)
 
-            print("\r                                                                                         ", end="")
-            print(f"\r[{i_ / I * 100:.0f}%] ETA: {MISC.timeformat(eta)}", end=endch)
-
-    if verbose > 1:
+    if (not freeloader_mode) and verbose > 1:
         a = np.mean(expected)
         b = 2 * np.std(expected)
         print(f"Took {MISC.timeformat(time.time() - firstStart)}. Expectation was ({MISC.timeformat(a - b)}, {MISC.timeformat(a + b)})")
 
-    if verbose > 0: print("Images downloaded successfully")
+    if (not freeloader_mode) and verbose > 0: print("Images downloaded successfully")
 
     df['imageWasFound'] = image_found
 
