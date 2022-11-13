@@ -1,10 +1,13 @@
 import json
 import os
+import copy
 import tensorflow as tf
 import pandas as pd
+import numpy as np
 
-import import_imaterialist
+import import_imaterialist as iM
 import computervision_parameters as PARAMS
+import computervision_misc as MISC
 
 import keras
 from keras.utils import to_categorical
@@ -77,7 +80,7 @@ def train_shoe_to_gender_model(
 
     train_datagen = ImageDataGenerator(rescale = 1. / 255)
 
-    df_train = import_imaterialist.get_dataset('training')
+    df_train = iM.get_dataset('training')
 
     df_train = df_train[df_train['taskName'] == 'shoe:gender']
 
@@ -96,7 +99,7 @@ def train_shoe_to_gender_model(
 
     validation_datagen = ImageDataGenerator(rescale=1. / 255)
 
-    df_validation = import_imaterialist.get_dataset('validation')
+    df_validation = iM.get_dataset('validation')
 
     df_validation = df_validation[df_validation['taskName'] == 'shoe:gender']
 
@@ -229,7 +232,7 @@ def train_shoe_autoencoder(
 
     train_datagen = ImageDataGenerator(rescale = 1. / 255)
 
-    df_train = import_imaterialist.get_dataset('training')
+    df_train = iM.get_dataset('training')
 
     df_train = df_train[df_train['apparelClass'] == 'shoe']
 
@@ -244,7 +247,7 @@ def train_shoe_autoencoder(
 
     validation_datagen = ImageDataGenerator(rescale=1. / 255)
 
-    df_validation = import_imaterialist.get_dataset('validation')
+    df_validation = iM.get_dataset('validation')
 
     df_validation = df_validation[df_validation['apparelClass'] == 'shoe']
 
@@ -310,13 +313,185 @@ def train_shoe_autoencoder(
 
     return history
 
+def get_shoe_subset(data_type='training',
+                    apparel_class='shoe',
+                    tasks=('shoe:gender', 'shoe:age', 'shoe:color'),
+                    verbose=2):
+    """
+    NOTE: this can be generalized for other apparel classes. All of the variables that would need to be changed
+    (i.e. become arguments of a more general function) have been defined right after this comment
+
+    :return: dataset, number_of_labels
+    """
+    # TO-BE-GENERALIZED VARIABLES
+
+    # all shoe tasks: ['shoe:gender', 'shoe:age', 'shoe:color', 'shoe:up height', 'shoe:type', 'shoe:closure type', 'shoe:toe shape', 'shoe:heel type', 'shoe:decoration', 'shoe:flat type', 'shoe:material', 'shoe:back counter type', 'shoe:pump type', 'shoe:boot type']
+    # 'shoe:boot type' and 'shoe:pump type' have been removed since they only have one label in the training set
+
+    # TO-BE-GENERALIZED VARIABLES OVER
+
+    if verbose > 0:
+        print(f"### CURATED DATASET FOR APPAREL CLASS '{apparel_class}'###")
+
+    # task-to-labels map
+    rawdata = iM.import_rawdata(data_type='training', delete_orphan_entries=False, save_json=False, verbose=0)
+    task_to_labels = MISC.get_task_to_all_values_map(training_dataset=rawdata)
+
+    # remove tasks not of this apparel class from task_to_labels
+    # i.e. remove 'dress:length' or 'shoe:pump type' from the shoe tasks we're interested in
+    all_tasks = MISC.get_tasks()
+    for generic_task in all_tasks:
+        if generic_task not in tasks:
+            task_to_labels.pop(generic_task)
+
+    number_of_labels = []
+    for task,labels in task_to_labels.items():
+        number_of_labels.append(len(labels))
+
+    # get dataset of only the relevant apparel class
+    dataset = iM.get_dataset(data_type)
+    dataset = dataset[dataset['apparelClass'] == apparel_class]
+
+    if verbose > 0:
+        print("PRINTING DATASET... (first 5 entries)")
+        print(dataset.iloc[0:5,:])
+
+        arbitraryimage_id = dataset.iloc[len(dataset) // 2]['imageId']
+        print("FINDING FEATURES OF ONE IMAGE...")
+        print(dataset[dataset['imageId'] == arbitraryimage_id])
+
+    # create columns for each task, and assign label when found
+    # the result will be so that, for example:
+    # each row will have columns ['shoe:gender', 'shoe:age', ... , 'shoe:color', 'shoe:type']
+    # with values ['men', 'adult', ... , 'blue', 'sneaker']
+    # (most images I've seen rarely have this many fields filled)
+
+    if verbose > 0:
+        print("Reformatting dataset...")
+
+    dataset.drop_duplicates(subset=['imageId', 'taskName'], inplace=True)
+
+    dataset = dataset.set_index(['imageId', 'taskName'], drop=False, verify_integrity=True)['labelName'].unstack().reset_index()
+
+    if verbose > 0:
+        print("Dataset reformatted")
+
+    if verbose > 1:
+        print("PRINTING REFORMATTED DATASET... (first 5 entries)")
+        print(dataset.iloc[0:5,:])
+        print("FINDING FEATURES OF ONE IMAGE AFTER REFORMATTING...")
+
+        pd.set_option('display.max_columns', None)
+        print(dataset[dataset['imageId'] == arbitraryimage_id])
+        pd.reset_option('display.max_columns')
+
+        #print(dataset[dataset["imageId"] == "4"])
+
+        # how well filled are the tasks? how many labels do they have?
+        task_info = pd.DataFrame(data=0, index=tasks, columns=["Fill Rate", "Amount of Labels"], dtype=int)
+
+        task_info["Fill Rate"] = task_info["Fill Rate"].astype('float32')
+
+        for task in tasks:
+            task_info.loc[task, "Fill Rate"] = (1. - np.mean(dataset[task].isnull())) * 100.
+            task_info.loc[task, "Amount of Labels"] = len(task_to_labels[task])
+
+        task_info["Ratio"] = task_info["Fill Rate"] / task_info["Amount of Labels"]
+
+        task_info.sort_values(by="Ratio", ascending=True, inplace=True)
+
+        task_info["Fill Rate"] = task_info["Fill Rate"].apply(lambda x: f"{x:.2f}%")
+        task_info["Ratio"] = task_info["Ratio"].apply(lambda x: f"{x:.2f}%")
+
+        print("TASK FILL RATE AND AMOUNT OF LABELS:")
+        print(task_info)
+
+    return dataset, number_of_labels
+
+def get_untrained_multitask_shoe_model(
+        image_size = 256,
+        kernel_size = 3,
+        maxpooling_size = 4,
+        dropout_rate = 0.5,
+        gamma = 0.5,
+        number_of_labels = [2,2,4],
+        verbose = 1):
+    """
+    Input: image file
+    Outputs:
+
+    :return:
+    """
+
+    image_shape = (image_size, image_size, 3)
+    kernel_shape = (kernel_size, kernel_size)
+    maxpooling_shape = (maxpooling_size, maxpooling_size)
+
+    inputs = tf.keras.layers.Input(shape=image_shape, name='input')
+
+    if verbose > 0:
+        print("Defining common convolutional layers...")
+
+    main_branch = tf.keras.layers.Conv2D(filters=32, kernel_size=kernel_shape, padding='same', name="conv_main_1")(inputs)
+    main_branch = tf.keras.layers.MaxPooling2D(pool_size=maxpooling_shape, name="maxpool_main_1")(main_branch)
+    main_branch = tf.keras.layers.Conv2D(filters=64, kernel_size=(kernel_size, kernel_size), padding='same', name="conv_main_2")(main_branch)
+    main_branch = tf.keras.layers.MaxPooling2D(pool_size=maxpooling_shape, name="maxpool_main_2")(main_branch)
+    main_branch = tf.keras.layers.Conv2D(filters=128, kernel_size=(kernel_size, kernel_size), padding='same', name="conv_main_3")(main_branch)
+    main_branch = tf.keras.layers.Flatten()(main_branch)
+    main_branch = tf.keras.layers.Dense(512, activation='relu', name="dense_main")(main_branch)
+    main_branch = tf.keras.layers.Dropout(dropout_rate, name="dropout_main")(main_branch)
+
+    if verbose > 0:
+        print("Defining multi-task layers...")
+
+    number_of_tasks = len(number_of_labels)
+    task_branches = []
+    loss_map = dict()
+    weights_map = dict()
+
+    for i in range(number_of_tasks):
+        n = number_of_labels[i]
+        task_name = f'task_{i+1}_output'
+
+        task_branch = tf.keras.layers.Dense(64 * n, activation='relu', name=f"dense_task{i+1}_1")(main_branch)
+        task_branch = tf.keras.layers.Dense(32 * n, activation='relu', name=f"dense_task{i+1}_2")(task_branch)
+        task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_task{i+1}_3")(task_branch)
+        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_task{i+1}_4")(task_branch)
+        task_branch = tf.keras.layers.Dense(n, activation='softmax', name=task_name)(task_branch)
+
+        if n > 2:
+            loss_map[task_name] = 'categorical_crossentropy'
+        else:
+            loss_map[task_name] = 'binary_crossentropy'
+
+        weights_map[task_name] = gamma**i
+
+        task_branches.append(task_branch)
+
+        if verbose > 0:
+            print(f"Task {i+1}/{number_of_tasks} appended")
+
+    model = tf.keras.Model(inputs=inputs, outputs=task_branches)
+
+    if verbose > 0: model.summary()
+
+    model.compile(optimizer='adam',
+                  loss=loss_map,
+                  loss_weights=weights_map,
+                  metrics=['accuracy'])
+
+    if verbose > 0:
+        print(f"Model successfully compiled")
+
+    return model
 
 
-import_imaterialist.get_dataset()
-import_imaterialist.get_dataset('validation')
+#iM.get_dataset()
+#iM.get_dataset('validation')
 
-#shoe_to_gender_model = get_untrained_shoe_to_gender_model()
-#train_shoe_to_gender_model(shoe_to_gender_model)
+tasks=['shoe:gender', 'shoe:age', 'shoe:color', 'shoe:up height', 'shoe:type', 'shoe:closure type',
+    'shoe:toe shape', 'shoe:heel type', 'shoe:decoration', 'shoe:flat type', 'shoe:material',
+    'shoe:back counter type']
 
-shoe_autoencoder, shoe_encoder = get_untrained_shoe_autoencoder()
-train_shoe_autoencoder(shoe_autoencoder)
+dataset, number_of_labels = get_shoe_subset(apparel_class='shoe', tasks=tasks)
+get_untrained_multitask_shoe_model(number_of_labels=number_of_labels)

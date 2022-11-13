@@ -80,7 +80,13 @@ def import_dataset_from_json(data_type='training'):
         return None
 
 
-def import_rawdata(data_type='training', dataset_size=None, freeloader_mode=True, verbose=2) -> pd.DataFrame:
+def import_rawdata(
+        data_type='training',
+        dataset_size=None,
+        freeloader_mode=True,
+        delete_orphan_entries=True,
+        save_json=True,
+        verbose=2) -> pd.DataFrame:
     """
     Forcibly creates a new [data_type]Data.json file. Returns the created dataframe.
 
@@ -110,7 +116,7 @@ def import_rawdata(data_type='training', dataset_size=None, freeloader_mode=True
 NOTE: If you want to download more images than you have locally, delete the present image files or set freeloader_mode to False
 """)
 
-    if dataset_size is None:
+    if dataset_size is None and delete_orphan_entries:
         dataset_size = PARAMS.DATASET_numberOfEntries
 
     path = PARAMS.RAWDATA_filepath[data_type]
@@ -245,15 +251,19 @@ NOTE: If you want to download more images than you have locally, delete the pres
 
     df['imageWasFound'] = image_found
 
-    if verbose > 0: print("Removing data entries with no images...")
-    df = df[image_found]
-    if verbose > 0: print(
-        f"Data entries with blank images successfully removed (Dataset is now {np.sum(image_found)} entries)")
+    if delete_orphan_entries:
+        if verbose > 0: print("Removing data entries with no images...")
+        df = df[image_found]
+        if verbose > 0: print(
+            f"Data entries with blank images successfully removed (Dataset is now {np.sum(image_found)} entries)")
+    else:
+        if verbose > 0: print(f"Dataset is now {np.sum(image_found)} entries")
 
     #keep only the columns we care about. 'url' and 'imageWasFound' are a waste of space
     df.drop(columns=['url', 'imageWasFound'], inplace=True)
 
-    export_dataset_as_json(df, data_type)
+    if save_json:
+        export_dataset_as_json(df, data_type)
 
     if verbose > 2: print(f"Printing df...\n{df}")
     return df
