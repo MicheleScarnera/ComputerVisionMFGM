@@ -345,8 +345,8 @@ def get_shoe_subset(data_type='training',
             task_to_labels.pop(generic_task)
 
     number_of_labels = []
-    for task,labels in task_to_labels.items():
-        number_of_labels.append(len(labels))
+    for task in tasks:
+        number_of_labels.append(len(task_to_labels[task]))
 
     # get dataset of only the relevant apparel class
     dataset = iM.get_dataset(data_type)
@@ -406,6 +406,8 @@ def get_shoe_subset(data_type='training',
         print("TASK FILL RATE AND AMOUNT OF LABELS:")
         print(task_info)
 
+        print(f"\"Recommended\" order in which the 'tasks' variable should be: {list(reversed(task_info.index))}") #[{', '.join(reversed(task_info.index))}]
+
     return dataset, number_of_labels
 
 def get_untrained_multitask_shoe_model(
@@ -413,7 +415,8 @@ def get_untrained_multitask_shoe_model(
         kernel_size = 3,
         maxpooling_size = 4,
         dropout_rate = 0.5,
-        gamma = 0.5,
+        gamma = 0.95,
+        tasks = ('placeholder_1', 'placeholder_2', 'placeholder_3'),
         number_of_labels = [2,2,4],
         verbose = 1):
     """
@@ -422,6 +425,10 @@ def get_untrained_multitask_shoe_model(
 
     :return:
     """
+
+    if type(tasks) is list:
+        for i in range(len(tasks)):
+            tasks[i] = tasks[i].replace(":", ".").replace(" ", "-")
 
     image_shape = (image_size, image_size, 3)
     kernel_shape = (kernel_size, kernel_size)
@@ -451,12 +458,12 @@ def get_untrained_multitask_shoe_model(
 
     for i in range(number_of_tasks):
         n = number_of_labels[i]
-        task_name = f'task_{i+1}_output'
+        task_name = f'{tasks[i]}'
 
-        task_branch = tf.keras.layers.Dense(64 * n, activation='relu', name=f"dense_task{i+1}_1")(main_branch)
-        task_branch = tf.keras.layers.Dense(32 * n, activation='relu', name=f"dense_task{i+1}_2")(task_branch)
-        task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_task{i+1}_3")(task_branch)
-        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_task{i+1}_4")(task_branch)
+        task_branch = tf.keras.layers.Dense(64 * n, activation='relu', name=f"dense_{task_name}_1")(main_branch)
+        task_branch = tf.keras.layers.Dense(32 * n, activation='relu', name=f"dense_{task_name}_2")(task_branch)
+        task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_{task_name}_3")(task_branch)
+        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
         task_branch = tf.keras.layers.Dense(n, activation='softmax', name=task_name)(task_branch)
 
         if n > 2:
@@ -464,12 +471,12 @@ def get_untrained_multitask_shoe_model(
         else:
             loss_map[task_name] = 'binary_crossentropy'
 
-        weights_map[task_name] = gamma**i
+        weights_map[task_name] = np.round(gamma**i, decimals=2)
 
         task_branches.append(task_branch)
 
         if verbose > 0:
-            print(f"Task {i+1}/{number_of_tasks} appended")
+            print(f"Task {i+1}/{number_of_tasks} ({tasks[i]}) appended")
 
     model = tf.keras.Model(inputs=inputs, outputs=task_branches)
 
@@ -481,6 +488,7 @@ def get_untrained_multitask_shoe_model(
                   metrics=['accuracy'])
 
     if verbose > 0:
+        print(f"Weights (gamma**i, gamma = {gamma}):\n{MISC.dictformat(weights_map)}")
         print(f"Model successfully compiled")
 
     return model
@@ -489,9 +497,8 @@ def get_untrained_multitask_shoe_model(
 #iM.get_dataset()
 #iM.get_dataset('validation')
 
-tasks=['shoe:gender', 'shoe:age', 'shoe:color', 'shoe:up height', 'shoe:type', 'shoe:closure type',
-    'shoe:toe shape', 'shoe:heel type', 'shoe:decoration', 'shoe:flat type', 'shoe:material',
-    'shoe:back counter type']
+tasks=['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
+       'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
 
 dataset, number_of_labels = get_shoe_subset(apparel_class='shoe', tasks=tasks)
-get_untrained_multitask_shoe_model(number_of_labels=number_of_labels)
+get_untrained_multitask_shoe_model(tasks=tasks, number_of_labels=number_of_labels)
