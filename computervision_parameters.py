@@ -30,4 +30,6 @@ CV_MODELS_SHOE_TO_GENDER_filename = 'shoeToGenderModel'
 
 CV_MODELS_SHOE_AUTOENCODER_filename = 'shoeAutoencoder'
 
+CV_MODELS_SHOE_MULTITASK_filename = 'shoeMultiTaskModel'
+
 MISC_models_path = 'trainedModels'

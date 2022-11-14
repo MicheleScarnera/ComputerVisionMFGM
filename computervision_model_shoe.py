@@ -76,7 +76,7 @@ def train_shoe_to_gender_model(
     """
 
     if verbose > 1:
-        print(f"Creating {PARAMS.IMAGES_shoepath['training']} and {PARAMS.IMAGES_shoepath['validation']} generators...")
+        print(f"Creating {PARAMS.IMAGES_filepath['training']} and {PARAMS.IMAGES_filepath['validation']} generators...")
 
     train_datagen = ImageDataGenerator(rescale = 1. / 255)
 
@@ -89,7 +89,7 @@ def train_shoe_to_gender_model(
 
     train_generator = train_datagen.flow_from_dataframe(
         dataframe=df_train,
-        directory=PARAMS.IMAGES_shoepath['training'],
+        directory=PARAMS.IMAGES_filepath['training'],
         x_col='imageName',
         y_col='labelName',
         target_size=(image_size, image_size),
@@ -108,7 +108,7 @@ def train_shoe_to_gender_model(
 
     validation_generator = validation_datagen.flow_from_dataframe(
         dataframe=df_validation,
-        directory=PARAMS.IMAGES_shoepath['validation'],
+        directory=PARAMS.IMAGES_filepath['validation'],
         x_col='imageName',
         y_col='labelName',
         target_size=(image_size, image_size),
@@ -228,7 +228,7 @@ def train_shoe_autoencoder(
     :return:
     """
     if verbose > 1:
-        print(f"Creating {PARAMS.IMAGES_shoepath['training']} and {PARAMS.IMAGES_shoepath['validation']} generators...")
+        print(f"Creating {PARAMS.IMAGES_filepath['training']} and {PARAMS.IMAGES_filepath['validation']} generators...")
 
     train_datagen = ImageDataGenerator(rescale = 1. / 255)
 
@@ -238,7 +238,7 @@ def train_shoe_autoencoder(
 
     train_generator = train_datagen.flow_from_dataframe(
         dataframe=df_train,
-        directory=PARAMS.IMAGES_shoepath['training'],
+        directory=PARAMS.IMAGES_filepath['training'],
         x_col='imageName',
         target_size=(image_size, image_size),
         batch_size=batch_size,
@@ -256,7 +256,7 @@ def train_shoe_autoencoder(
 
     validation_generator = validation_datagen.flow_from_dataframe(
         dataframe=df_validation,
-        directory=PARAMS.IMAGES_shoepath['validation'],
+        directory=PARAMS.IMAGES_filepath['validation'],
         x_col='imageName',
         target_size=(image_size, image_size),
         batch_size=batch_size,
@@ -331,7 +331,7 @@ def get_shoe_subset(data_type='training',
     # TO-BE-GENERALIZED VARIABLES OVER
 
     if verbose > 0:
-        print(f"### CURATED DATASET FOR APPAREL CLASS '{apparel_class}'###")
+        print(f"### CURATED DATASET FOR APPAREL CLASS '{apparel_class}' ({data_type})###")
 
     # task-to-labels map
     rawdata = iM.import_rawdata(data_type='training', delete_orphan_entries=False, save_json=False, verbose=0)
@@ -372,7 +372,9 @@ def get_shoe_subset(data_type='training',
     dataset.drop_duplicates(subset=['imageId', 'taskName'], inplace=True)
 
     dataset = dataset.set_index(['imageId', 'taskName'], drop=False, verify_integrity=True)['labelName'].unstack().reset_index()
-
+    
+    dataset['imageName'] = dataset['imageId'].apply(lambda x: f"{x}.jpg")
+    
     if verbose > 0:
         print("Dataset reformatted")
 
@@ -408,6 +410,22 @@ def get_shoe_subset(data_type='training',
 
         print(f"\"Recommended\" order in which the 'tasks' variable should be: {list(reversed(task_info.index))}") #[{', '.join(reversed(task_info.index))}]
 
+    # change labels from strings ('high') to ints (i.e. 3)
+    if verbose > 1:
+        print("Making labels integers...")
+
+        def index_of(x):
+            try:
+                return task_to_labels[task].index(x)
+            except ValueError:
+                return -1
+
+        for task in tasks:
+            dataset[task] = dataset[task].apply(lambda x: index_of(x))#.astype(np.short)
+
+        print("FINAL FORM OF THE DATASET... (first 5 entries)")
+        print(dataset.iloc[0:5, :])
+
     return dataset, number_of_labels
 
 def get_untrained_multitask_shoe_model(
@@ -416,8 +434,8 @@ def get_untrained_multitask_shoe_model(
         maxpooling_size = 4,
         dropout_rate = 0.5,
         gamma = 0.95,
-        tasks = ('placeholder_1', 'placeholder_2', 'placeholder_3'),
-        number_of_labels = [2,2,4],
+        tasks_arg = ('placeholder_1', 'placeholder_2', 'placeholder_3'),
+        number_of_labels = (2,2,4),
         verbose = 1):
     """
     Input: image file
@@ -425,6 +443,8 @@ def get_untrained_multitask_shoe_model(
 
     :return:
     """
+
+    tasks = tasks_arg.copy()
 
     if type(tasks) is list:
         for i in range(len(tasks)):
@@ -453,7 +473,6 @@ def get_untrained_multitask_shoe_model(
 
     number_of_tasks = len(number_of_labels)
     task_branches = []
-    loss_map = dict()
     weights_map = dict()
 
     for i in range(number_of_tasks):
@@ -466,11 +485,6 @@ def get_untrained_multitask_shoe_model(
         task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
         task_branch = tf.keras.layers.Dense(n, activation='softmax', name=task_name)(task_branch)
 
-        if n > 2:
-            loss_map[task_name] = 'categorical_crossentropy'
-        else:
-            loss_map[task_name] = 'binary_crossentropy'
-
         weights_map[task_name] = np.round(gamma**i, decimals=2)
 
         task_branches.append(task_branch)
@@ -482,10 +496,10 @@ def get_untrained_multitask_shoe_model(
 
     if verbose > 0: model.summary()
 
-    model.compile(optimizer='adam',
-                  loss=loss_map,
+    model.compile(optimizer=tf.keras.optimizers.RMSprop(),
+                  loss=tf.keras.losses.SparseCategoricalCrossentropy(ignore_class=-1),
                   loss_weights=weights_map,
-                  metrics=['accuracy'])
+                  metrics=['accuracy', 'mean_squared_error'])
 
     if verbose > 0:
         print(f"Weights (gamma**i, gamma = {gamma}):\n{MISC.dictformat(weights_map)}")
@@ -493,12 +507,120 @@ def get_untrained_multitask_shoe_model(
 
     return model
 
+def train_multitask_shoe_model(
+        model,
+        df_train,
+        df_validation,
+        tasks,
+        image_size = 256,
+        batch_size = 4,
+        epochs = 5,
+        verbose = 2):
+    """
+
+    :return:
+    """
+    if verbose > 1:
+        print(f"Creating training and validation generators...")
+
+    train_datagen = ImageDataGenerator(rescale=1. / 255)
+
+    train_generator = train_datagen.flow_from_dataframe(
+        dataframe=df_train,
+        directory=PARAMS.IMAGES_filepath['training'],
+        x_col='imageName',
+        y_col=tasks,
+        target_size=(image_size, image_size),
+        batch_size=batch_size,
+        class_mode='multi_output'
+    )
+
+    validation_datagen = ImageDataGenerator(rescale=1. / 255)
+
+    validation_generator = validation_datagen.flow_from_dataframe(
+        dataframe=df_train,
+        directory=PARAMS.IMAGES_filepath['validation'],
+        x_col='imageName',
+        y_col=tasks,
+        target_size=(image_size, image_size),
+        batch_size=batch_size,
+        class_mode='multi_output'
+    )
+
+    if verbose > 1:
+        for data_batch, labels_batch in train_generator:
+            try:
+                d = data_batch.shape
+                l = labels_batch.shape
+            except:
+                d = f"{len(data_batch)}" #(i.e. {data_batch})
+                l = f"{len(labels_batch)} (i.e. {labels_batch})"
+
+            print(f"train_generator created with shape {d} and labels shape {l}")
+            break
+
+        for data_batch, labels_batch in validation_generator:
+            try:
+                d = data_batch.shape
+                l = labels_batch.shape
+            except:
+                d = f"{len(data_batch)}"
+                l = f"{len(labels_batch)} (i.e. {labels_batch})"
+
+            print(f"validation_generator created with shape {d} and labels shape {l}")
+            break
+
+    # callbacks
+    if verbose > 1:
+        print("Defining callbacks...")
+
+    # saving model
+    folder_path = PARAMS.MISC_models_path
+    file_path = f"{folder_path}/{PARAMS.CV_MODELS_SHOE_MULTITASK_filename}"
+
+    earlystop = EarlyStopping(monitor='val_loss',
+                              min_delta=0.001,
+                              patience=6,
+                              verbose=1,
+                              mode='auto')
+
+    csv_logger = CSVLogger(f"{file_path}_trainingLog.csv", separator=",", append=False)
+
+    history = model.fit(train_generator,
+                        steps_per_epoch=train_generator.samples / batch_size,
+                        epochs=epochs,
+                        validation_data=validation_generator,
+                        validation_steps=validation_generator.samples / batch_size,
+                        callbacks=[earlystop, csv_logger],
+                        verbose=2
+                        )
+
+    if verbose > 0:
+        print(f"Saving model to {file_path}...")
+
+    try:
+        os.mkdir(folder_path)
+    except FileExistsError as error:
+        if verbose > 1: print(f"{folder_path} folder already exists")
+    else:
+        if verbose > 1: print(f"{folder_path} folder created")
+
+    model.save(file_path)
+
+    if verbose > 0:
+        print(f"{file_path} saved")
+
+    return history
+    
 
 #iM.get_dataset()
 #iM.get_dataset('validation')
 
-tasks=['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
-       'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
+tasks = ['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
+         'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
 
-dataset, number_of_labels = get_shoe_subset(apparel_class='shoe', tasks=tasks)
-get_untrained_multitask_shoe_model(tasks=tasks, number_of_labels=number_of_labels)
+dataset_train, number_of_labels = get_shoe_subset(data_type='training', apparel_class='shoe', tasks=tasks)
+dataset_validation, _ = get_shoe_subset(data_type='validation', apparel_class='shoe', tasks=tasks)
+
+model = get_untrained_multitask_shoe_model(tasks_arg=tasks, number_of_labels=number_of_labels)
+train_multitask_shoe_model(model=model, df_train=dataset_train, df_validation=dataset_validation, tasks=tasks)

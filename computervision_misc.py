@@ -167,6 +167,9 @@ def get_task_to_all_values_map(training_dataset=None, task_map=None, label_map=N
             result[key] = set()
             result[key].add(value)
 
+    for key in result.keys():
+        result[key] = list(result[key])
+
     return result
 
 """
