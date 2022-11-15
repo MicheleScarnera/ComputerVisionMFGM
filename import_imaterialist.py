@@ -1,13 +1,17 @@
 import computervision_parameters as PARAMS
 import computervision_misc as MISC
 
+import os
 import os.path
+import io
+import PIL.Image as pil_image
 import numpy as np
 import pandas as pd
 import requests
 import json
 import time
 
+import warnings
 
 def save_image_file(path,url_list, verbose = 0):
     if type(url_list) is str:
@@ -50,6 +54,31 @@ def save_image_file(path,url_list, verbose = 0):
 
     if verbose > 0: print("No image found")
     return False #np.empty(shape=(1, 1))
+
+def purge_bad_images(data_type='training'):
+    warnings.filterwarnings("error")
+
+    path = PARAMS.IMAGES_filepath[data_type]
+
+    print(f"Purging bad images from {path}...")
+    for (root, _, filenames) in os.walk(path):
+        before = len(filenames)
+        removed = 0
+        for file_name in filenames:
+            file_path = os.path.join(root, file_name)
+            if os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    try:
+                        img = pil_image.open(io.BytesIO(f.read()))
+                    except:
+                        os.remove(file_path)
+                        removed = removed + 1
+
+        break
+
+    print(f"{removed} images removed from {before} images")
+    warnings.filterwarnings("default")
+
 
 
 def export_dataset_as_json(df, data_type='training'):
@@ -103,7 +132,7 @@ def import_rawdata(
         if verbose > 0: print("""Checking if freeloading is possible...""")
 
         f = []
-        for (dirpath, dirnames, filenames) in os.walk(folder_path):
+        for (_, _, filenames) in os.walk(folder_path):
             f.extend(filenames)
             break
 
@@ -146,7 +175,7 @@ NOTE: If you want to download more images than you have locally, delete the pres
     if freeloader_mode:
         if verbose > 0: print(f"Freeloader mode is enabled, dataset size will be of however many images are found")
     else:
-        if dataset_size is not None and dataset_size > 0:
+        if (dataset_size is not None) and (dataset_size > 0):
             if verbose > 1: print("Freeloader mode is disabled, hence images that weren't found will be downloaded")
             if verbose > 0: print(f"Dataset will have ~{(dataset_size * 0.7):.0f} entries")
             df = df[0:dataset_size]
@@ -206,6 +235,12 @@ NOTE: If you want to download more images than you have locally, delete the pres
     image_path_func = lambda x: f"{folder_path}/{x}.jpg"
 
     df['imageName'] = df['imageId'].apply(lambda x: f"{x}.jpg")
+
+    # purge images that PIL.Image cannot open
+    """
+    if freeloader_mode:
+        purge_bad_images(data_type)
+    """
 
     # which image files are present?
     # (i tried doing this with pandas.apply() instead of this "dumber" approach,

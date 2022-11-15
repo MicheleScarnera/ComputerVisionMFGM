@@ -1,317 +1,33 @@
 import json
 import os
+import sys
 import copy
 import tensorflow as tf
 import pandas as pd
 import numpy as np
 
+import import_imaterialist
 import import_imaterialist as iM
 import computervision_parameters as PARAMS
 import computervision_misc as MISC
 
 import keras
 from keras.utils import to_categorical
+from keras import losses
 from keras import layers
 from keras import models
 from keras.preprocessing import image
+from keras import backend as K
 from keras.preprocessing.image import ImageDataGenerator
 from keras import optimizers
 from keras.models import load_model
 from keras.callbacks import CSVLogger, EarlyStopping
 import matplotlib.pyplot as plt
 
-def get_untrained_shoe_to_gender_model(
-        image_size = 256,
-        kernel_size = 3,
-        maxpooling_size = 2,
-        dropout_rate = 0.5,
-        verbose = 1):
-    """
-    Input: image file
-    Outputs: gender 2-vector (+ 512-vector?)
+from keras.callbacks import Callback
+from sklearn.metrics import accuracy_score
 
-    :return:
-    """
-
-    kernel_square = (kernel_size, kernel_size)
-    maxpooling_square = (maxpooling_size, maxpooling_size)
-
-    model = models.Sequential()
-    model.add(layers.Conv2D(32, kernel_square, padding='same', activation='relu',
-                            input_shape=(image_size, image_size, 3)))
-    model.add(layers.MaxPooling2D(maxpooling_square))
-    model.add(layers.Conv2D(64, kernel_square, padding='same', activation='relu'))
-    model.add(layers.MaxPooling2D(maxpooling_square))
-    model.add(layers.Conv2D(128, kernel_square, padding='same', activation='relu'))
-    model.add(layers.MaxPooling2D(maxpooling_square))
-    model.add(layers.Conv2D(128, kernel_square, padding='same', activation='relu'))
-    model.add(layers.MaxPooling2D(maxpooling_square))
-    model.add(layers.Flatten())
-    model.add(layers.Dropout(rate=dropout_rate))
-    model.add(layers.Dense(512, activation='relu'))
-    model.add(layers.Dense(2, activation='softmax'))
-
-    if verbose > 0: model.summary()
-
-    model.compile(loss='categorical_crossentropy',
-                  optimizer=optimizers.RMSprop(learning_rate=1e-4),
-                  metrics=['acc'])
-
-    return model
-
-def train_shoe_to_gender_model(
-        model,
-        image_size = 256,
-        batch_size = 4,
-        epochs = 5,
-        verbose = 2):
-    """
-
-    :param model:
-    :param image_size:
-    :param batch_size:
-    :param epochs:
-    :param verbose:
-    :return:
-    """
-
-    if verbose > 1:
-        print(f"Creating {PARAMS.IMAGES_filepath['training']} and {PARAMS.IMAGES_filepath['validation']} generators...")
-
-    train_datagen = ImageDataGenerator(rescale = 1. / 255)
-
-    df_train = iM.get_dataset('training')
-
-    df_train = df_train[df_train['taskName'] == 'shoe:gender']
-
-    #print(df_train[['imageName', 'labelName']])
-    #print(df_train['imageName'].shape)
-
-    train_generator = train_datagen.flow_from_dataframe(
-        dataframe=df_train,
-        directory=PARAMS.IMAGES_filepath['training'],
-        x_col='imageName',
-        y_col='labelName',
-        target_size=(image_size, image_size),
-        batch_size=batch_size,
-        class_mode='categorical'
-    )
-
-    validation_datagen = ImageDataGenerator(rescale=1. / 255)
-
-    df_validation = iM.get_dataset('validation')
-
-    df_validation = df_validation[df_validation['taskName'] == 'shoe:gender']
-
-    #print(df_validation[['imageName', 'labelName']])
-    #print(df_validation['imageName'].shape)
-
-    validation_generator = validation_datagen.flow_from_dataframe(
-        dataframe=df_validation,
-        directory=PARAMS.IMAGES_filepath['validation'],
-        x_col='imageName',
-        y_col='labelName',
-        target_size=(image_size, image_size),
-        batch_size=batch_size,
-        class_mode='categorical'
-    )
-
-    if verbose > 1:
-        for data_batch, labels_batch in train_generator:
-            print(f"train_generator created with shape {data_batch.shape} and labels shape {labels_batch.shape}")
-            break
-
-        for data_batch, labels_batch in validation_generator:
-            print(f"validation_generator created with shape {data_batch.shape} and labels shape {labels_batch.shape}")
-            break
-
-    # callbacks
-    if verbose > 1:
-        print("Defining callbacks...")
-
-    earlystop = EarlyStopping(monitor='val_acc',
-                              min_delta=0.001,
-                              patience=6,
-                              verbose=1,
-                              mode='auto')
-
-    csv_logger = CSVLogger('training.log', separator=",", append=False)
-
-    history = model.fit(train_generator,
-                        steps_per_epoch=train_generator.samples / batch_size,
-                        epochs=epochs,
-                        validation_data=validation_generator,
-                        validation_steps=validation_generator.samples / batch_size,
-                        callbacks=[earlystop, csv_logger]
-                        )
-
-    # saving model
-    folder_path = PARAMS.MISC_models_path
-    file_path = f"{folder_path}/{PARAMS.CV_MODELS_SHOE_TO_GENDER_filename}"
-
-    if verbose > 0:
-        print(f"Saving apparel model to {file_path}...")
-
-    try:
-        os.mkdir(folder_path)
-    except FileExistsError as error:
-        if verbose > 1: print(f"{folder_path} folder already exists")
-    else:
-        if verbose > 1: print(f"{folder_path} folder created")
-
-    model.save(file_path)
-
-    if verbose > 0:
-        print(f"{file_path} saved")
-
-    return history
-
-def get_untrained_shoe_autoencoder(
-        image_size = 256,
-        kernel_size = 3,
-        maxpooling_size = 2,
-        dropout_rate = 0.5,
-        verbose = 1):
-    """
-
-
-
-    :param image_size:
-    :param kernel_size:
-    :param maxpooling_size:
-    :param dropout_rate:
-    :param verbose:
-    :return: Returns a 2-tuple, containing (model, encoder)
-    """
-
-    image_square = (image_size, image_size, 3)
-    kernel_square = (kernel_size, kernel_size)
-    maxpooling_square = (maxpooling_size, maxpooling_size)
-
-    input_img = keras.Input(shape=image_square)
-
-    x = layers.Conv2D(64, kernel_square, activation='relu', padding='same')(input_img)
-    x = layers.MaxPooling2D(maxpooling_square, padding='same')(x)
-    x = layers.Conv2D(32, kernel_square, activation='relu', padding='same')(x)
-    x = layers.MaxPooling2D(maxpooling_square, padding='same')(x)
-    x = layers.Conv2D(32, kernel_square, activation='relu', padding='same')(x)
-    encoded = layers.MaxPooling2D(maxpooling_square, padding='same', name='encoder')(x)
-
-    # at this point the representation is
-
-    x = layers.Conv2D(32, kernel_square, activation='relu', padding='same')(encoded)
-    x = layers.UpSampling2D(maxpooling_square)(x)
-    x = layers.Conv2D(32, kernel_square, activation='relu', padding='same')(x)
-    x = layers.UpSampling2D(maxpooling_square)(x)
-    x = layers.Conv2D(64, kernel_square, activation='relu', padding='same')(x)
-    x = layers.UpSampling2D(maxpooling_square)(x)
-    decoded = layers.Conv2D(3, kernel_square, activation='sigmoid', padding='same')(x)
-
-    autoencoder = keras.Model(input_img, decoded)
-
-    if verbose > 0: autoencoder.summary()
-
-    autoencoder.compile(
-        optimizer=optimizers.RMSprop(learning_rate=1e-4),
-        loss='binary_crossentropy')
-
-    return autoencoder, encoded
-
-def train_shoe_autoencoder(
-        model,
-        image_size = 256,
-        batch_size = 4,
-        epochs = 5,
-        verbose = 2):
-    """
-
-    :return:
-    """
-    if verbose > 1:
-        print(f"Creating {PARAMS.IMAGES_filepath['training']} and {PARAMS.IMAGES_filepath['validation']} generators...")
-
-    train_datagen = ImageDataGenerator(rescale = 1. / 255)
-
-    df_train = iM.get_dataset('training')
-
-    df_train = df_train[df_train['apparelClass'] == 'shoe']
-
-    train_generator = train_datagen.flow_from_dataframe(
-        dataframe=df_train,
-        directory=PARAMS.IMAGES_filepath['training'],
-        x_col='imageName',
-        target_size=(image_size, image_size),
-        batch_size=batch_size,
-        class_mode='input'
-    )
-
-    validation_datagen = ImageDataGenerator(rescale=1. / 255)
-
-    df_validation = iM.get_dataset('validation')
-
-    df_validation = df_validation[df_validation['apparelClass'] == 'shoe']
-
-    # print(df_validation[['imageName', 'labelName']])
-    # print(df_validation['imageName'].shape)
-
-    validation_generator = validation_datagen.flow_from_dataframe(
-        dataframe=df_validation,
-        directory=PARAMS.IMAGES_filepath['validation'],
-        x_col='imageName',
-        target_size=(image_size, image_size),
-        batch_size=batch_size,
-        class_mode='input'
-    )
-
-    if verbose > 1:
-        for data_batch, labels_batch in train_generator:
-            print(f"train_generator created with shape {data_batch.shape} and labels shape {labels_batch.shape}")
-            break
-
-        for data_batch, labels_batch in validation_generator:
-            print(f"validation_generator created with shape {data_batch.shape} and labels shape {labels_batch.shape}")
-            break
-
-    # callbacks
-    if verbose > 1:
-        print("Defining callbacks...")
-
-    earlystop = EarlyStopping(monitor='val_loss',
-                              min_delta=0.001,
-                              patience=6,
-                              verbose=1,
-                              mode='auto')
-
-    csv_logger = CSVLogger('training.log', separator=",", append=False)
-
-    history = model.fit(train_generator,
-                        steps_per_epoch=train_generator.samples / batch_size,
-                        epochs=epochs,
-                        validation_data=validation_generator,
-                        validation_steps=validation_generator.samples / batch_size,
-                        callbacks=[earlystop, csv_logger]
-                        )
-
-    # saving model
-    folder_path = PARAMS.MISC_models_path
-    file_path = f"{folder_path}/{PARAMS.CV_MODELS_SHOE_AUTOENCODER_filename}"
-
-    if verbose > 0:
-        print(f"Saving apparel model to {file_path}...")
-
-    try:
-        os.mkdir(folder_path)
-    except FileExistsError as error:
-        if verbose > 1: print(f"{folder_path} folder already exists")
-    else:
-        if verbose > 1: print(f"{folder_path} folder created")
-
-    model.save(file_path)
-
-    if verbose > 0:
-        print(f"{file_path} saved")
-
-    return history
+np.random.seed(8000)
 
 def get_shoe_subset(data_type='training',
                     apparel_class='shoe',
@@ -352,7 +68,9 @@ def get_shoe_subset(data_type='training',
     dataset = iM.get_dataset(data_type)
     dataset = dataset[dataset['apparelClass'] == apparel_class]
 
-    if verbose > 0:
+    dataset = dataset[dataset['taskName'].apply(lambda x: x in tasks)]
+
+    if verbose > 1:
         print("PRINTING DATASET... (first 5 entries)")
         print(dataset.iloc[0:5,:])
 
@@ -372,9 +90,9 @@ def get_shoe_subset(data_type='training',
     dataset.drop_duplicates(subset=['imageId', 'taskName'], inplace=True)
 
     dataset = dataset.set_index(['imageId', 'taskName'], drop=False, verify_integrity=True)['labelName'].unstack().reset_index()
-    
+
     dataset['imageName'] = dataset['imageId'].apply(lambda x: f"{x}.jpg")
-    
+
     if verbose > 0:
         print("Dataset reformatted")
 
@@ -389,6 +107,7 @@ def get_shoe_subset(data_type='training',
 
         #print(dataset[dataset["imageId"] == "4"])
 
+    if verbose > 0:
         # how well filled are the tasks? how many labels do they have?
         task_info = pd.DataFrame(data=0, index=tasks, columns=["Fill Rate", "Amount of Labels"], dtype=int)
 
@@ -414,23 +133,120 @@ def get_shoe_subset(data_type='training',
     if verbose > 1:
         print("Making labels integers...")
 
-        def index_of(x):
-            try:
-                return task_to_labels[task].index(x)
-            except ValueError:
-                return -1
+    """
+    def index_of(t, j, x):
+        try:
+            return to_categorical(task_to_labels[t].index(x), num_classes=number_of_labels[j])
+        except ValueError:
+            return tf.convert_to_tensor([-1.0])
+    """
 
-        for task in tasks:
-            dataset[task] = dataset[task].apply(lambda x: index_of(x))#.astype(np.short)
+    def index_of(t, j, x):
+        joker_mode = False
+        try:
+            return task_to_labels[t].index(x)
+        except ValueError:
+            if data_type == 'training' and joker_mode:
+                return np.random.choice(range(number_of_labels[j]))
 
+            return -1
+
+    for i, task in enumerate(tasks):
+        dataset[task] = dataset[task].apply(lambda x: index_of(task, i, x))
+
+    if verbose > 1:
         print("FINAL FORM OF THE DATASET... (first 5 entries)")
         print(dataset.iloc[0:5, :])
 
     return dataset, number_of_labels
 
+"""
+class BinaryTruePositives(tf.keras.metrics.Metric):
+
+    def __init__(self, name='binary_true_positives', **kwargs):
+        super(BinaryTruePositives, self).__init__(name=name, **kwargs)
+        self.true_positives = self.add_weight(name='tp', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_true = tf.cast(y_true, tf.bool)
+        y_pred = tf.cast(y_pred, tf.bool)
+
+        values = tf.logical_and(tf.equal(y_true, True), tf.equal(y_pred, True))
+        values = tf.cast(values, self.dtype)
+        if sample_weight is not None:
+            sample_weight = tf.cast(sample_weight, self.dtype)
+            sample_weight = tf.broadcast_to(sample_weight, values.shape)
+            values = tf.multiply(values, sample_weight)
+
+        self.true_positives.assign_add(tf.reduce_sum(values))
+
+    def result(self):
+        return self.true_positives
+"""
+
+"""
+def masked_accuracy(y_true, y_pred):
+    m = tf.keras.metrics.Accuracy()
+    mask = K.cast(K.not_equal(y_true, -1), K.floatx())
+    is_equal = K.cast(K.equal(y_true, y_pred), K.floatx())
+    m.update_state(mask * is_equal, mask)
+    return m.result()
+"""
+
+class SparseMaskedAccuracy(tf.keras.metrics.Metric):
+
+    def __init__(self, ignore_value=-1, name='masked_accuracy', **kwargs):
+        super(SparseMaskedAccuracy, self).__init__(name=name, **kwargs)
+
+        self.ignoreValue = ignore_value
+
+        self.count = self.add_weight(name='count', initializer='zeros')
+        self.total = self.add_weight(name='total', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_true = tf.cast(y_true, tf.int64)
+        y_pred = tf.cast(tf.math.argmax(y_pred, axis=-1), tf.int64)
+
+        donotignore_mask = tf.cast(tf.not_equal(y_true, self.ignoreValue), tf.float32)
+        isequal_mask = tf.cast(tf.equal(y_true, y_pred), tf.float32)
+
+        if sample_weight is not None:
+            sample_weight = tf.cast(sample_weight, self.dtype)
+            sample_weight = tf.broadcast_to(sample_weight, isequal_mask.shape)
+            donotignore_mask = tf.multiply(donotignore_mask, sample_weight)
+            isequal_mask = tf.multiply(isequal_mask, sample_weight)
+
+        self.count.assign_add(tf.reduce_sum(tf.multiply(donotignore_mask, isequal_mask)))
+        self.total.assign_add(tf.reduce_sum(donotignore_mask))
+
+    def result(self):
+        return self.count, self.total  # self.count / self.total
+
+
+def masked_accuracy(y_true, y_pred, sample_weight=None, ignoreValue=-1):
+    #print(y_true)
+    #print(y_pred)
+
+    y_true = tf.cast(y_true, tf.int64)
+    y_pred = tf.cast(tf.math.argmax(y_pred, axis=-1), tf.int64)
+
+    donotignore_mask = tf.cast(tf.not_equal(y_true, ignoreValue), tf.float32)
+    isequal_mask = tf.cast(tf.equal(y_true, y_pred), tf.float32)
+
+    if sample_weight is not None:
+        sample_weight = tf.cast(sample_weight, tf.float32)
+        sample_weight = tf.broadcast_to(sample_weight, isequal_mask.shape)
+        donotignore_mask = tf.multiply(donotignore_mask, sample_weight)
+        isequal_mask = tf.multiply(isequal_mask, sample_weight)
+
+    count = (tf.reduce_sum(tf.multiply(donotignore_mask, isequal_mask)))
+    total = (tf.reduce_sum(donotignore_mask))
+
+    return count / total
+
 def get_untrained_multitask_shoe_model(
         image_size = 256,
-        kernel_size = 3,
+        kernel_size = 4,
         maxpooling_size = 4,
         dropout_rate = 0.5,
         gamma = 0.95,
@@ -459,13 +275,18 @@ def get_untrained_multitask_shoe_model(
     if verbose > 0:
         print("Defining common convolutional layers...")
 
-    main_branch = tf.keras.layers.Conv2D(filters=32, kernel_size=kernel_shape, padding='same', name="conv_main_1")(inputs)
+    main_branch = tf.keras.layers.Conv2D(filters=8, kernel_size=kernel_shape, padding='same', activation='relu', name="conv_main_1")(inputs)
     main_branch = tf.keras.layers.MaxPooling2D(pool_size=maxpooling_shape, name="maxpool_main_1")(main_branch)
-    main_branch = tf.keras.layers.Conv2D(filters=64, kernel_size=(kernel_size, kernel_size), padding='same', name="conv_main_2")(main_branch)
+    main_branch = tf.keras.layers.Conv2D(filters=16, kernel_size=(kernel_size, kernel_size), padding='same', activation='relu', name="conv_main_2")(main_branch)
     main_branch = tf.keras.layers.MaxPooling2D(pool_size=maxpooling_shape, name="maxpool_main_2")(main_branch)
-    main_branch = tf.keras.layers.Conv2D(filters=128, kernel_size=(kernel_size, kernel_size), padding='same', name="conv_main_3")(main_branch)
+    main_branch = tf.keras.layers.Conv2D(filters=64, kernel_size=(kernel_size, kernel_size), padding='same', activation='relu', name="conv_main_3")(main_branch)
     main_branch = tf.keras.layers.Flatten()(main_branch)
-    main_branch = tf.keras.layers.Dense(512, activation='relu', name="dense_main")(main_branch)
+
+    # preventing gradient explosion: normalize, tanh activation
+    main_branch = tf.keras.layers.BatchNormalization()(main_branch)
+    main_branch = tf.keras.layers.Dense(128, activation='tanh', name="dense_main")(main_branch)
+
+    # dropout to prevent overfitting
     main_branch = tf.keras.layers.Dropout(dropout_rate, name="dropout_main")(main_branch)
 
     if verbose > 0:
@@ -474,18 +295,45 @@ def get_untrained_multitask_shoe_model(
     number_of_tasks = len(number_of_labels)
     task_branches = []
     weights_map = dict()
+    loss_map = dict()
+
+    def masked_loss_function(y_true, y_pred):
+        mask = K.cast(K.not_equal(y_true, -1), K.floatx())
+        return K.binary_crossentropy(K.cast(y_true, K.floatx()) * mask, y_pred * mask)
+
+    """
+    def masked_accuracy(y_true, y_pred):
+        m = tf.keras.metrics.Accuracy()
+        mask = K.cast(K.not_equal(y_true, -1), K.floatx())
+        is_equal = K.cast(K.equal(y_true, y_pred), K.floatx())
+        m.update_state(mask * is_equal, mask)
+        return m.result()
+    """
 
     for i in range(number_of_tasks):
         n = number_of_labels[i]
+        lastlayer_activation = 'softmax'
+
+        """
+        if n < 3:
+            n = 1
+            lastlayer_activation = 'sigmoid'
+        """
+
         task_name = f'{tasks[i]}'
 
-        task_branch = tf.keras.layers.Dense(64 * n, activation='relu', name=f"dense_{task_name}_1")(main_branch)
-        task_branch = tf.keras.layers.Dense(32 * n, activation='relu', name=f"dense_{task_name}_2")(task_branch)
-        task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_{task_name}_3")(task_branch)
-        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
-        task_branch = tf.keras.layers.Dense(n, activation='softmax', name=task_name)(task_branch)
+        task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_{task_name}_1")(main_branch)
+        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_2")(task_branch)
+        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_3")(task_branch)
+        # task_branch = tf.keras.layers.Dense(2 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
+        task_branch = tf.keras.layers.Dense(n, activation=lastlayer_activation, name=task_name)(task_branch)
 
         weights_map[task_name] = np.round(gamma**i, decimals=2)
+
+        if n == 1:
+            loss_map[task_name] = masked_loss_function
+        else:
+            loss_map[task_name] = losses.SparseCategoricalCrossentropy(from_logits=False, ignore_class=-1)
 
         task_branches.append(task_branch)
 
@@ -496,10 +344,10 @@ def get_untrained_multitask_shoe_model(
 
     if verbose > 0: model.summary()
 
-    model.compile(optimizer=tf.keras.optimizers.RMSprop(),
-                  loss=tf.keras.losses.SparseCategoricalCrossentropy(ignore_class=-1),
+    model.compile(optimizer='adam',
+                  loss=loss_map,
                   loss_weights=weights_map,
-                  metrics=['accuracy', 'mean_squared_error'])
+                  metrics=[masked_accuracy])
 
     if verbose > 0:
         print(f"Weights (gamma**i, gamma = {gamma}):\n{MISC.dictformat(weights_map)}")
@@ -512,16 +360,21 @@ def train_multitask_shoe_model(
         df_train,
         df_validation,
         tasks,
+        number_of_labels,
         image_size = 256,
-        batch_size = 4,
-        epochs = 5,
-        verbose = 2):
+        batch_size = 32,
+        epochs = 30,
+        verbose = 1):
     """
 
     :return:
     """
     if verbose > 1:
         print(f"Creating training and validation generators...")
+
+    classes_map = dict()
+    for i, task in enumerate(tasks):
+        classes_map[task] = list(range(number_of_labels[i]))
 
     train_datagen = ImageDataGenerator(rescale=1. / 255)
 
@@ -530,6 +383,7 @@ def train_multitask_shoe_model(
         directory=PARAMS.IMAGES_filepath['training'],
         x_col='imageName',
         y_col=tasks,
+        classes=classes_map,
         target_size=(image_size, image_size),
         batch_size=batch_size,
         class_mode='multi_output'
@@ -538,10 +392,11 @@ def train_multitask_shoe_model(
     validation_datagen = ImageDataGenerator(rescale=1. / 255)
 
     validation_generator = validation_datagen.flow_from_dataframe(
-        dataframe=df_train,
+        dataframe=df_validation,
         directory=PARAMS.IMAGES_filepath['validation'],
         x_col='imageName',
         y_col=tasks,
+        classes=classes_map,
         target_size=(image_size, image_size),
         batch_size=batch_size,
         class_mode='multi_output'
@@ -576,27 +431,6 @@ def train_multitask_shoe_model(
 
     # saving model
     folder_path = PARAMS.MISC_models_path
-    file_path = f"{folder_path}/{PARAMS.CV_MODELS_SHOE_MULTITASK_filename}"
-
-    earlystop = EarlyStopping(monitor='val_loss',
-                              min_delta=0.001,
-                              patience=6,
-                              verbose=1,
-                              mode='auto')
-
-    csv_logger = CSVLogger(f"{file_path}_trainingLog.csv", separator=",", append=False)
-
-    history = model.fit(train_generator,
-                        steps_per_epoch=train_generator.samples / batch_size,
-                        epochs=epochs,
-                        validation_data=validation_generator,
-                        validation_steps=validation_generator.samples / batch_size,
-                        callbacks=[earlystop, csv_logger],
-                        verbose=2
-                        )
-
-    if verbose > 0:
-        print(f"Saving model to {file_path}...")
 
     try:
         os.mkdir(folder_path)
@@ -605,22 +439,73 @@ def train_multitask_shoe_model(
     else:
         if verbose > 1: print(f"{folder_path} folder created")
 
+    file_path = f"{folder_path}/{PARAMS.CV_MODELS_SHOE_MULTITASK_filename}"
+
+    earlystop = EarlyStopping(monitor='val_loss',
+                              min_delta=0.001,
+                              patience=epochs,
+                              verbose=1,
+                              mode='auto',
+                              restore_best_weights=True)
+
+    csv_logger = CSVLogger(f"{file_path}_trainingLog.csv", separator=",", append=False)
+
+    #masked_accuracy = CategoricalAccuracyNoMask()
+
+    history = model.fit(train_generator,
+                        steps_per_epoch=train_generator.samples // batch_size + 1,
+                        epochs=epochs,
+                        validation_data=validation_generator,
+                        validation_steps=validation_generator.samples // batch_size + 1,
+                        callbacks=[earlystop, csv_logger],
+                        verbose=1
+                        )
+
+    if verbose > 0:
+        print(f"Saving model to {file_path}...")
+
     model.save(file_path)
 
     if verbose > 0:
         print(f"{file_path} saved")
+
+    if verbose > 0:
+        print("Performing an example prediction...")
+
+        for data_batch, labels_batch in validation_generator:
+            print(model.predict(x=data_batch))
+            break
 
     return history
     
 
 #iM.get_dataset()
 #iM.get_dataset('validation')
+def run():
+    iM.purge_bad_images('training')
+    iM.purge_bad_images('validation')
 
-tasks = ['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
-         'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
+    """
+    tasks = ['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
+             'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
+    """
+    tasks = ['shoe:gender', 'shoe:age', 'shoe:type']
 
-dataset_train, number_of_labels = get_shoe_subset(data_type='training', apparel_class='shoe', tasks=tasks)
-dataset_validation, _ = get_shoe_subset(data_type='validation', apparel_class='shoe', tasks=tasks)
+    dataset_train, number_of_labels = get_shoe_subset(data_type='training', apparel_class='shoe', tasks=tasks, verbose=2)
+    dataset_validation, _ = get_shoe_subset(data_type='validation', apparel_class='shoe', tasks=tasks, verbose=1)
 
-model = get_untrained_multitask_shoe_model(tasks_arg=tasks, number_of_labels=number_of_labels)
-train_multitask_shoe_model(model=model, df_train=dataset_train, df_validation=dataset_validation, tasks=tasks)
+    model = get_untrained_multitask_shoe_model(tasks_arg=tasks, number_of_labels=number_of_labels, verbose=1)
+
+    # hypothesis: batch_size and epochs need to be VERY high,
+    # as most of the data fed is missing labels that cannot train
+    train_multitask_shoe_model(
+        model=model,
+        df_train=dataset_train,
+        df_validation=dataset_validation,
+        tasks=tasks,
+        number_of_labels=number_of_labels,
+        batch_size=64,
+        epochs=5,
+        verbose=1)
+
+run()
