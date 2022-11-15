@@ -116,7 +116,7 @@ def import_rawdata(
 NOTE: If you want to download more images than you have locally, delete the present image files or set freeloader_mode to False
 """)
 
-    if dataset_size is None and (not freeloader_mode or delete_orphan_entries):
+    if dataset_size is None and delete_orphan_entries:
         dataset_size = PARAMS.DATASET_numberOfEntries
 
     path = PARAMS.RAWDATA_filepath[data_type]
@@ -146,7 +146,7 @@ NOTE: If you want to download more images than you have locally, delete the pres
     if freeloader_mode:
         if verbose > 0: print(f"Freeloader mode is enabled, dataset size will be of however many images are found")
     else:
-        if dataset_size > 0:
+        if dataset_size is not None and dataset_size > 0:
             if verbose > 1: print("Freeloader mode is disabled, hence images that weren't found will be downloaded")
             if verbose > 0: print(f"Dataset will have ~{(dataset_size * 0.7):.0f} entries")
             df = df[0:dataset_size]
