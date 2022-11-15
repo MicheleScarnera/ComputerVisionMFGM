@@ -116,7 +116,7 @@ def import_rawdata(
 NOTE: If you want to download more images than you have locally, delete the present image files or set freeloader_mode to False
 """)
 
-    if dataset_size is None and delete_orphan_entries:
+    if dataset_size is None and (not freeloader_mode or delete_orphan_entries):
         dataset_size = PARAMS.DATASET_numberOfEntries
 
     path = PARAMS.RAWDATA_filepath[data_type]

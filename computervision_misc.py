@@ -42,7 +42,7 @@ def get_tasks() -> list:
 
     return result
 
-def get_task_map() -> dict[str, str]:
+def get_task_map() -> dict:
     """
     :return: Returns a dict[str, str] that maps the taskId (i.e. 12) to the name of the task (i.e. dress:length)
     """
@@ -59,7 +59,7 @@ def get_task_map() -> dict[str, str]:
 
     return result
 
-def get_label_map() -> dict[str, str]:
+def get_label_map() -> dict:
     """
     :return: Returns a dict[str, str] that maps the labelId (i.e. 3) to the name of the task (i.e. black)
     """
@@ -76,7 +76,7 @@ def get_label_map() -> dict[str, str]:
 
     return result
 
-def get_apparel_class_map(task_map=None) -> dict[str, str]:
+def get_apparel_class_map(task_map=None) -> dict:
     """
     :param task_map: If already computed, you can specify the task map.
     :return: Returns a dict[str, str] that maps the taskId (i.e. 12) to the name of the apparel class (i.e. dress)
@@ -98,7 +98,7 @@ def get_apparel_class_map(task_map=None) -> dict[str, str]:
     return result
 
 
-def get_apparel_to_all_tasks_map(values_are_names=True) -> dict[str, list]:
+def get_apparel_to_all_tasks_map(values_are_names=True) -> dict:
     """
     :param values_are_names: If true, the dictionary values will be i.e. ['gender', 'age', 'color', ...]. If false, they will be i.e. ['1', '2', '3', '4', '9', ...]
     :return: Returns a dict[str, list] that maps the name of the apparel class (i.e. shoe) to all of its tasks (i.e. ['gender', 'age', 'color', ...])
@@ -141,7 +141,7 @@ def import_dataset_from_json(data_type='training'):
     except:
         return None
 
-def get_task_to_all_values_map(training_dataset=None, task_map=None, label_map=None) -> dict[int, list]:
+def get_task_to_all_values_map(training_dataset=None, task_map=None, label_map=None) -> dict:
     """
     :param training_dataset: If already computed, you can provide the training set.
     :return:Returns a dict[int, list] that maps the task name to all of its possible label values.
