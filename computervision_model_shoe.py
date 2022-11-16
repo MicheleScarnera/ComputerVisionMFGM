@@ -482,7 +482,7 @@ def run():
         fill_rate_val=fill_rate_val,
         task_reformat=task_reformat,
         batch_size=64,
-        epochs=5,
+        epochs=60,
         verbose=1)
 
 run()
