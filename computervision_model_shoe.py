@@ -17,7 +17,8 @@ from keras import losses
 from keras import layers
 from keras import models
 from keras.preprocessing import image
-from keras import backend as K
+from keras import backend as backend
+from keras.utils import metrics_utils
 from keras.preprocessing.image import ImageDataGenerator
 from keras import optimizers
 from keras.models import load_model
@@ -107,6 +108,11 @@ def get_shoe_subset(data_type='training',
 
         #print(dataset[dataset["imageId"] == "4"])
 
+    # calculate tasks' fill rate
+    fill_rate = dict()
+    for task in tasks:
+        fill_rate[task] = (1. - np.mean(dataset[task].isnull()))
+
     if verbose > 0:
         # how well filled are the tasks? how many labels do they have?
         task_info = pd.DataFrame(data=0, index=tasks, columns=["Fill Rate", "Amount of Labels"], dtype=int)
@@ -114,7 +120,7 @@ def get_shoe_subset(data_type='training',
         task_info["Fill Rate"] = task_info["Fill Rate"].astype('float32')
 
         for task in tasks:
-            task_info.loc[task, "Fill Rate"] = (1. - np.mean(dataset[task].isnull())) * 100.
+            task_info.loc[task, "Fill Rate"] = fill_rate[task] * 100.
             task_info.loc[task, "Amount of Labels"] = len(task_to_labels[task])
 
         task_info["Ratio"] = task_info["Fill Rate"] / task_info["Amount of Labels"]
@@ -133,14 +139,6 @@ def get_shoe_subset(data_type='training',
     if verbose > 1:
         print("Making labels integers...")
 
-    """
-    def index_of(t, j, x):
-        try:
-            return to_categorical(task_to_labels[t].index(x), num_classes=number_of_labels[j])
-        except ValueError:
-            return tf.convert_to_tensor([-1.0])
-    """
-
     def index_of(t, j, x):
         joker_mode = False
         try:
@@ -158,91 +156,8 @@ def get_shoe_subset(data_type='training',
         print("FINAL FORM OF THE DATASET... (first 5 entries)")
         print(dataset.iloc[0:5, :])
 
-    return dataset, number_of_labels
+    return dataset, number_of_labels, fill_rate
 
-"""
-class BinaryTruePositives(tf.keras.metrics.Metric):
-
-    def __init__(self, name='binary_true_positives', **kwargs):
-        super(BinaryTruePositives, self).__init__(name=name, **kwargs)
-        self.true_positives = self.add_weight(name='tp', initializer='zeros')
-
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        y_true = tf.cast(y_true, tf.bool)
-        y_pred = tf.cast(y_pred, tf.bool)
-
-        values = tf.logical_and(tf.equal(y_true, True), tf.equal(y_pred, True))
-        values = tf.cast(values, self.dtype)
-        if sample_weight is not None:
-            sample_weight = tf.cast(sample_weight, self.dtype)
-            sample_weight = tf.broadcast_to(sample_weight, values.shape)
-            values = tf.multiply(values, sample_weight)
-
-        self.true_positives.assign_add(tf.reduce_sum(values))
-
-    def result(self):
-        return self.true_positives
-"""
-
-"""
-def masked_accuracy(y_true, y_pred):
-    m = tf.keras.metrics.Accuracy()
-    mask = K.cast(K.not_equal(y_true, -1), K.floatx())
-    is_equal = K.cast(K.equal(y_true, y_pred), K.floatx())
-    m.update_state(mask * is_equal, mask)
-    return m.result()
-"""
-
-class SparseMaskedAccuracy(tf.keras.metrics.Metric):
-
-    def __init__(self, ignore_value=-1, name='masked_accuracy', **kwargs):
-        super(SparseMaskedAccuracy, self).__init__(name=name, **kwargs)
-
-        self.ignoreValue = ignore_value
-
-        self.count = self.add_weight(name='count', initializer='zeros')
-        self.total = self.add_weight(name='total', initializer='zeros')
-
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        y_true = tf.cast(y_true, tf.int64)
-        y_pred = tf.cast(tf.math.argmax(y_pred, axis=-1), tf.int64)
-
-        donotignore_mask = tf.cast(tf.not_equal(y_true, self.ignoreValue), tf.float32)
-        isequal_mask = tf.cast(tf.equal(y_true, y_pred), tf.float32)
-
-        if sample_weight is not None:
-            sample_weight = tf.cast(sample_weight, self.dtype)
-            sample_weight = tf.broadcast_to(sample_weight, isequal_mask.shape)
-            donotignore_mask = tf.multiply(donotignore_mask, sample_weight)
-            isequal_mask = tf.multiply(isequal_mask, sample_weight)
-
-        self.count.assign_add(tf.reduce_sum(tf.multiply(donotignore_mask, isequal_mask)))
-        self.total.assign_add(tf.reduce_sum(donotignore_mask))
-
-    def result(self):
-        return self.count, self.total  # self.count / self.total
-
-
-def masked_accuracy(y_true, y_pred, sample_weight=None, ignoreValue=-1):
-    #print(y_true)
-    #print(y_pred)
-
-    y_true = tf.cast(y_true, tf.int64)
-    y_pred = tf.cast(tf.math.argmax(y_pred, axis=-1), tf.int64)
-
-    donotignore_mask = tf.cast(tf.not_equal(y_true, ignoreValue), tf.float32)
-    isequal_mask = tf.cast(tf.equal(y_true, y_pred), tf.float32)
-
-    if sample_weight is not None:
-        sample_weight = tf.cast(sample_weight, tf.float32)
-        sample_weight = tf.broadcast_to(sample_weight, isequal_mask.shape)
-        donotignore_mask = tf.multiply(donotignore_mask, sample_weight)
-        isequal_mask = tf.multiply(isequal_mask, sample_weight)
-
-    count = (tf.reduce_sum(tf.multiply(donotignore_mask, isequal_mask)))
-    total = (tf.reduce_sum(donotignore_mask))
-
-    return count / total
 
 def get_untrained_multitask_shoe_model(
         image_size = 256,
@@ -261,10 +176,15 @@ def get_untrained_multitask_shoe_model(
     """
 
     tasks = tasks_arg.copy()
+    task_reformat = dict()
 
     if type(tasks) is list:
-        for i in range(len(tasks)):
+        for i, task_org in enumerate(tasks_arg):
             tasks[i] = tasks[i].replace(":", ".").replace(" ", "-")
+            task_reformat[task_org] = tasks[i]
+
+    if verbose > 0:
+        print(f"Inside a model, tasks have been reformatted:\n{MISC.dictformat(task_reformat)}")
 
     image_shape = (image_size, image_size, 3)
     kernel_shape = (kernel_size, kernel_size)
@@ -298,17 +218,8 @@ def get_untrained_multitask_shoe_model(
     loss_map = dict()
 
     def masked_loss_function(y_true, y_pred):
-        mask = K.cast(K.not_equal(y_true, -1), K.floatx())
-        return K.binary_crossentropy(K.cast(y_true, K.floatx()) * mask, y_pred * mask)
-
-    """
-    def masked_accuracy(y_true, y_pred):
-        m = tf.keras.metrics.Accuracy()
-        mask = K.cast(K.not_equal(y_true, -1), K.floatx())
-        is_equal = K.cast(K.equal(y_true, y_pred), K.floatx())
-        m.update_state(mask * is_equal, mask)
-        return m.result()
-    """
+        mask = backend.cast(backend.not_equal(y_true, -1), backend.floatx())
+        return backend.binary_crossentropy(backend.cast(y_true, backend.floatx()) * mask, y_pred * mask)
 
     for i in range(number_of_tasks):
         n = number_of_labels[i]
@@ -324,7 +235,7 @@ def get_untrained_multitask_shoe_model(
 
         task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_{task_name}_1")(main_branch)
         task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_2")(task_branch)
-        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_3")(task_branch)
+        task_branch = tf.keras.layers.Dense(8 * n, activation='tanh', name=f"dense_{task_name}_3")(task_branch)
         # task_branch = tf.keras.layers.Dense(2 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
         task_branch = tf.keras.layers.Dense(n, activation=lastlayer_activation, name=task_name)(task_branch)
 
@@ -344,16 +255,22 @@ def get_untrained_multitask_shoe_model(
 
     if verbose > 0: model.summary()
 
+    # NOTE ABOUT SPARSE CATEGORICAL ACCURACY
+    # It doesn't understand that -1 is a label to ignore,
+    # so every time it's encountered it will count as a failed prediction.
+    # If 75% of labels are valid (not -1), then the accuracy metric may never be higher than 75%
+    # -> The accuracy metric needs to be normalized by the fill rate of that variable
+
     model.compile(optimizer='adam',
                   loss=loss_map,
                   loss_weights=weights_map,
-                  metrics=[masked_accuracy])
+                  metrics=['sparse_categorical_accuracy'])
 
     if verbose > 0:
         print(f"Weights (gamma**i, gamma = {gamma}):\n{MISC.dictformat(weights_map)}")
         print(f"Model successfully compiled")
 
-    return model
+    return model, task_reformat
 
 def train_multitask_shoe_model(
         model,
@@ -361,6 +278,9 @@ def train_multitask_shoe_model(
         df_validation,
         tasks,
         number_of_labels,
+        fill_rate_train,
+        fill_rate_val,
+        task_reformat,
         image_size = 256,
         batch_size = 32,
         epochs = 30,
@@ -376,9 +296,17 @@ def train_multitask_shoe_model(
     for i, task in enumerate(tasks):
         classes_map[task] = list(range(number_of_labels[i]))
 
-    train_datagen = ImageDataGenerator(rescale=1. / 255)
+    image_datagen = ImageDataGenerator(
+        rescale=1. / 255,
+        rotation_range=45,
+        width_shift_range=0.25,
+        height_shift_range=0.25,
+        fill_mode='nearest',
+        horizontal_flip=True,
+        vertical_flip=True,
+    )
 
-    train_generator = train_datagen.flow_from_dataframe(
+    train_generator = image_datagen.flow_from_dataframe(
         dataframe=df_train,
         directory=PARAMS.IMAGES_filepath['training'],
         x_col='imageName',
@@ -389,9 +317,7 @@ def train_multitask_shoe_model(
         class_mode='multi_output'
     )
 
-    validation_datagen = ImageDataGenerator(rescale=1. / 255)
-
-    validation_generator = validation_datagen.flow_from_dataframe(
+    validation_generator = image_datagen.flow_from_dataframe(
         dataframe=df_validation,
         directory=PARAMS.IMAGES_filepath['validation'],
         x_col='imageName',
@@ -448,9 +374,14 @@ def train_multitask_shoe_model(
                               mode='auto',
                               restore_best_weights=True)
 
-    csv_logger = CSVLogger(f"{file_path}_trainingLog.csv", separator=",", append=False)
+    traininglog_path = f"{file_path}_trainingLog.csv"
+    csv_logger = CSVLogger(traininglog_path, separator=",", append=False)
 
-    #masked_accuracy = CategoricalAccuracyNoMask()
+    print("""
+NOTE: any 'accuracy' metrics during training are severely underestimated,
+due to them treating missing labels as a failed prediction.
+This is accounted for in the training log CSV file, but not while the model is being trained.
+""")
 
     history = model.fit(train_generator,
                         steps_per_epoch=train_generator.samples // batch_size + 1,
@@ -468,6 +399,31 @@ def train_multitask_shoe_model(
 
     if verbose > 0:
         print(f"{file_path} saved")
+
+    # divide all accuracies by the task's fill rate
+    if verbose > 0:
+        print("Adjusting accuracy metrics in the training log...")
+
+    traininglog_df = pd.read_csv(traininglog_path)
+
+    for column in traininglog_df.columns:
+        if "accuracy" in column:
+            for task_org, task_reformatted in task_reformat.items():
+                if (task_reformatted in column):
+                    # contains 'accuracy' in column name AND contains i.e. 'shoe.gender' in column name
+                    # => divide by shoe:gender's fill rate
+
+                    # note: training data and validation data fill rate are potentially different
+                    if "val" in column:
+                        traininglog_df[column] = traininglog_df[column] / fill_rate_val[task_org]
+                    else:
+                        traininglog_df[column] = traininglog_df[column] / fill_rate_train[task_org]
+
+
+    traininglog_df.to_csv(traininglog_path)
+
+    if verbose > 0:
+        print("Adjustment successful")
 
     if verbose > 0:
         print("Performing an example prediction...")
@@ -488,13 +444,31 @@ def run():
     """
     tasks = ['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
              'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
+             
+    sorted:
+    
+    tasks = ['shoe:gender', 'shoe:age', 'shoe:type', 'shoe:up height', 'shoe:back counter type', 'shoe:closure type',
+             'shoe:heel type', 'shoe:toe shape', 'shoe:decoration', 'shoe:flat type', 'shoe:color', 'shoe:material']
     """
-    tasks = ['shoe:gender', 'shoe:age', 'shoe:type']
+    tasks = ['shoe:gender', 'shoe:age', 'shoe:type', 'shoe:up height', 'shoe:back counter type', 'shoe:closure type',
+             'shoe:heel type', 'shoe:toe shape', 'shoe:decoration', 'shoe:flat type', 'shoe:color', 'shoe:material']
 
-    dataset_train, number_of_labels = get_shoe_subset(data_type='training', apparel_class='shoe', tasks=tasks, verbose=2)
-    dataset_validation, _ = get_shoe_subset(data_type='validation', apparel_class='shoe', tasks=tasks, verbose=1)
+    dataset_train, number_of_labels, fill_rate_train = get_shoe_subset(
+        data_type='training',
+        apparel_class='shoe',
+        tasks=tasks,
+        verbose=1)
 
-    model = get_untrained_multitask_shoe_model(tasks_arg=tasks, number_of_labels=number_of_labels, verbose=1)
+    dataset_validation, _, fill_rate_val = get_shoe_subset(
+        data_type='validation',
+        apparel_class='shoe',
+        tasks=tasks,
+        verbose=1)
+
+    model, task_reformat = get_untrained_multitask_shoe_model(
+        tasks_arg=tasks,
+        number_of_labels=number_of_labels,
+        verbose=1)
 
     # hypothesis: batch_size and epochs need to be VERY high,
     # as most of the data fed is missing labels that cannot train
@@ -504,6 +478,9 @@ def run():
         df_validation=dataset_validation,
         tasks=tasks,
         number_of_labels=number_of_labels,
+        fill_rate_train=fill_rate_train,
+        fill_rate_val=fill_rate_val,
+        task_reformat=task_reformat,
         batch_size=64,
         epochs=5,
         verbose=1)
