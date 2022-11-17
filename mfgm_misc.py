@@ -42,8 +42,36 @@ def get_tasks() -> list:
 
     return result
 
-def get_task_map() -> dict:
+def get_mapper_to_common_task(tasks=None) -> dict:
     """
+
+    :return:
+    """
+    if tasks is None:
+        tasks = get_tasks()
+
+    tasks_without_apparel_class = [task.split(':')[1] for task in tasks]
+    counts = dict()
+
+    for t in tasks_without_apparel_class:
+        counts[t] = counts.get(t, 0) + 1
+
+    result = dict()
+
+    for i, task in enumerate(tasks):
+        task_without_apparel_class = tasks_without_apparel_class[i]
+
+        if counts[task_without_apparel_class] >= 4:
+            result[task] = f"common:{task_without_apparel_class}"
+        else:
+            result[task] = None
+
+    return result
+
+def get_task_map(reverse=False) -> dict:
+    """
+    :param reverse: If False, mapping is 12 -> dress:length. If True, mapping is dress:length -> 12
+
     :return: Returns a dict[str, str] that maps the taskId (i.e. 12) to the name of the task (i.e. dress:length)
     """
     taskMapPath = PARAMS.RAWDATA_taskMapPath
@@ -55,12 +83,17 @@ def get_task_map() -> dict:
     result = dict()
 
     for l in mappings:
-        result[l['taskId']] = l['taskName']
+        if reverse:
+            result[l['taskName']] = l['taskId']
+        else:
+            result[l['taskId']] = l['taskName']
 
     return result
 
-def get_label_map() -> dict:
+def get_label_map(reverse=False) -> dict:
     """
+    :param reverse: If False, mapping is 3 -> black. If True, mapping is black -> 3
+
     :return: Returns a dict[str, str] that maps the labelId (i.e. 3) to the name of the task (i.e. black)
     """
     label_map_path = PARAMS.RAWDATA_labelMapPath
@@ -72,7 +105,10 @@ def get_label_map() -> dict:
     result = dict()
 
     for l in mappings:
-        result[l['labelId']] = l['labelName']
+        if reverse:
+            result[l['labelName']] = l['labelId']
+        else:
+            result[l['labelId']] = l['labelName']
 
     return result
 
@@ -158,8 +194,8 @@ def get_task_to_all_values_map(training_dataset=None, task_map=None, label_map=N
     result = dict()
 
     for i, row in training_dataset.iterrows():
-        key = task_map[row['taskId']]
-        value = label_map[row['labelId']]
+        key = task_map[str(row['taskId'])]
+        value = label_map[str(row['labelId'])]
 
         try:
             result[key].add(value)

@@ -21,15 +21,9 @@ RAWDATA_validationPath = "iMaterialist/fgvc4_iMat.validation.data.json"
 
 RAWDATA_filepath = {'training': RAWDATA_trainingPath, 'validation': RAWDATA_validationPath}
 
-RAWDATA_taskMapPath = "iMaterialist/fgvc4_iMat.task_map.json"
-RAWDATA_labelMapPath = "iMaterialist/fgvc4_iMat.label_map.json"
+RAWDATA_taskMapPath = "additional_jsons/custom_task_map.json"
+RAWDATA_labelMapPath = "additional_jsons/custom_label_map.json"
 
-CV_MODELS_APPAREL_filename = 'apparelModel'
-
-CV_MODELS_SHOE_TO_GENDER_filename = 'shoeToGenderModel'
-
-CV_MODELS_SHOE_AUTOENCODER_filename = 'shoeAutoencoder'
-
-CV_MODELS_SHOE_MULTITASK_filename = 'shoeMultiTaskModel'
+MFGM_MULTITASK_MODEL_filename = 'multiTaskModel'
 
 MISC_models_path = 'trainedModels'

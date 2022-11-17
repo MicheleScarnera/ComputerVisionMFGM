@@ -15,32 +15,34 @@ def run():
     tasks = ['shoe:gender', 'shoe:age', 'shoe:type', 'shoe:up height', 'shoe:back counter type', 'shoe:closure type',
              'shoe:heel type', 'shoe:toe shape', 'shoe:decoration', 'shoe:flat type', 'shoe:color', 'shoe:material']
     """
-    tasks = ['shoe:up height', 'shoe:age', 'shoe:color']
+    # ['shoe:up height', 'shoe:age', 'shoe:color']
+    apparel_class = 'all'
+    tasks = ['common:apparel_class', 'common:gender', 'common:age', 'common:color', 'common:material']
 
     randomize_missing_labels = True
 
-    dataset_train, number_of_labels, fill_rate_train = mt.get_shoe_subset(
+    dataset_train, number_of_labels, fill_rate_train = mt.get_multitask_subset(
         data_type='training',
-        apparel_class='shoe',
+        apparel_class=apparel_class,
         tasks=tasks,
         randomize_missing_labels=randomize_missing_labels,
         verbose=1)
 
-    dataset_validation, _, fill_rate_val = mt.get_shoe_subset(
+    dataset_validation, _, fill_rate_val = mt.get_multitask_subset(
         data_type='validation',
-        apparel_class='shoe',
+        apparel_class=apparel_class,
         tasks=tasks,
         randomize_missing_labels=randomize_missing_labels,
         verbose=1)
 
-    model, task_reformat = mt.get_untrained_multitask_shoe_model(
+    model, task_reformat = mt.get_untrained_multitask_model(
         tasks_arg=tasks,
         number_of_labels=number_of_labels,
         verbose=1)
 
     # hypothesis: batch_size and epochs need to be VERY high,
     # as most of the data fed is missing labels that cannot train
-    mt.train_multitask_shoe_model(
+    mt.train_multitask_model(
         model=model,
         df_train=dataset_train,
         df_validation=dataset_validation,

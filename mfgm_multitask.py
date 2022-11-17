@@ -30,11 +30,11 @@ from sklearn.metrics import accuracy_score
 
 np.random.seed(8000)
 
-def get_shoe_subset(data_type='training',
-                    apparel_class='shoe',
-                    tasks=('shoe:gender', 'shoe:age', 'shoe:color'),
-                    randomize_missing_labels=True,
-                    verbose=2):
+def get_multitask_subset(data_type='training',
+                         apparel_class='all',
+                         tasks=('shoe:gender', 'shoe:age', 'shoe:color'),
+                         randomize_missing_labels=True,
+                         verbose=2):
     """
     NOTE: this can be generalized for other apparel classes. All of the variables that would need to be changed
     (i.e. become arguments of a more general function) have been defined right after this comment
@@ -68,7 +68,9 @@ def get_shoe_subset(data_type='training',
 
     # get dataset of only the relevant apparel class
     dataset = iM.get_dataset(data_type)
-    dataset = dataset[dataset['apparelClass'] == apparel_class]
+
+    if apparel_class in ('shoe', 'dress', 'outerwear', 'pants'):
+        dataset = dataset[dataset['apparelClass'] == apparel_class]
 
     dataset = dataset[dataset['taskName'].apply(lambda x: x in tasks)]
 
@@ -159,7 +161,7 @@ def get_shoe_subset(data_type='training',
     return dataset, number_of_labels, fill_rate
 
 
-def get_untrained_multitask_shoe_model(
+def get_untrained_multitask_model(
         image_size = 256,
         kernel_size = 4,
         maxpooling_size = 4,
@@ -217,19 +219,9 @@ def get_untrained_multitask_shoe_model(
     weights_map = dict()
     loss_map = dict()
 
-    def masked_loss_function(y_true, y_pred):
-        mask = backend.cast(backend.not_equal(y_true, -1), backend.floatx())
-        return backend.binary_crossentropy(backend.cast(y_true, backend.floatx()) * mask, y_pred * mask)
-
     for i in range(number_of_tasks):
         n = number_of_labels[i]
         lastlayer_activation = 'softmax'
-
-        """
-        if n < 3:
-            n = 1
-            lastlayer_activation = 'sigmoid'
-        """
 
         task_name = f'{tasks[i]}'
 
@@ -241,10 +233,7 @@ def get_untrained_multitask_shoe_model(
 
         weights_map[task_name] = gamma**i
 
-        if n == 1:
-            loss_map[task_name] = masked_loss_function
-        else:
-            loss_map[task_name] = losses.SparseCategoricalCrossentropy(from_logits=False, ignore_class=-1)
+        loss_map[task_name] = losses.SparseCategoricalCrossentropy(from_logits=False, ignore_class=-1)
 
         task_branches.append(task_branch)
 
@@ -278,7 +267,7 @@ def get_untrained_multitask_shoe_model(
 
     return model, task_reformat
 
-def train_multitask_shoe_model(
+def train_multitask_model(
         model,
         df_train,
         df_validation,
@@ -372,7 +361,7 @@ def train_multitask_shoe_model(
     else:
         if verbose > 1: print(f"{folder_path} folder created")
 
-    file_path = f"{folder_path}/{PARAMS.CV_MODELS_SHOE_MULTITASK_filename}"
+    file_path = f"{folder_path}/{PARAMS.MFGM_MULTITASK_MODEL_filename}"
 
     patience = np.max([epochs // 3, 6])
 

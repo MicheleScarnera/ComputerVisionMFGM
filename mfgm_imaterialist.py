@@ -123,6 +123,8 @@ def import_rawdata(
         freeloader_mode=True,
         attempt_downloading_images=True,
         delete_orphan_entries=True,
+        add_common_tasks=True,
+        add_apparel_class_as_task=True,
         save_json=True,
         verbose=2) -> pd.DataFrame:
     """
@@ -133,6 +135,8 @@ def import_rawdata(
     :param freeloader_mode: If enough images are already present, no downloading is attempted and the json is constructed around the available files
     :param attempt_downloading_images: If false, images are not downloaded no matter what
     :param delete_orphan_entries: If true, entries that don't have their image downloaded are deleted
+    :param add_common_tasks: If true, any entry that specifies common tasks like 'shoe:color' is duplicated, with its task name changed to 'color'
+    :param add_apparel_class_as_task: If true, the apparel class is added as a task
     :param save_json: If true, the [data_type]Data.json file is saved.
     :param verbose: Level of verbosity.
     :return: a pandas.DataFrame
@@ -237,12 +241,6 @@ NOTE: If you want to download more images than you have locally, delete the pres
 
     df['imageName'] = df['imageId'].apply(lambda x: f"{x}.jpg")
 
-    # purge images that PIL.Image cannot open
-    """
-    if freeloader_mode:
-        purge_bad_images(data_type)
-    """
-
     # which image files are present?
     # (i tried doing this with pandas.apply() instead of this "dumber" approach,
     # but i don't think os.path.isfile() really works in there
@@ -297,8 +295,45 @@ NOTE: If you want to download more images than you have locally, delete the pres
     else:
         if verbose > 0: print(f"Dataset (with images) is now {np.sum(image_found)} entries")
 
-    #keep only the columns we care about. 'url' are a waste of space
+
+    # keep only the columns we care about. the 'url' column is a waste of space
     df.drop(columns=['url'], inplace=True)
+
+    if add_common_tasks or add_apparel_class_as_task:
+        task_map_reverse = MISC.get_task_map(reverse=True)
+        label_map_reverse = MISC.get_label_map(reverse=True)
+
+    # add common tasks
+    if add_common_tasks:
+        if verbose > 0: print(f"Adding rows for common tasks...")
+
+        common_mapper = MISC.get_mapper_to_common_task()
+
+        df_with_common_tasks = df.copy()
+        df_with_common_tasks['taskName'] = df_with_common_tasks['taskName'].apply(lambda x: common_mapper[x])
+        df_with_common_tasks = df_with_common_tasks[df_with_common_tasks['taskName'].apply(lambda x: x is not None)]
+
+        # apply correct task/label id
+        df_with_common_tasks['taskId'] = df_with_common_tasks['taskName'].apply(lambda x: task_map_reverse[x])
+        df_with_common_tasks['labelId'] = df_with_common_tasks['labelName'].apply(lambda x: label_map_reverse[x])
+
+        df = pd.concat(objs=(df, df_with_common_tasks), ignore_index=True)
+        df_with_common_tasks = None
+
+    if add_apparel_class_as_task:
+        if verbose > 0: print(f"Adding apparel_class task...")
+
+        df_first_time_image_id = df[~df.duplicated(subset='imageId', keep='first')].copy()
+
+        df_first_time_image_id['taskName'] = 'common:apparel_class'
+        df_first_time_image_id['labelName'] = df_first_time_image_id['apparelClass']
+
+        # apply correct task/label id
+        df_first_time_image_id['taskId'] = df_first_time_image_id['taskName'].apply(lambda x: task_map_reverse[x])
+        df_first_time_image_id['labelId'] = df_first_time_image_id['labelName'].apply(lambda x: label_map_reverse[x])
+
+        df = pd.concat(objs=(df, df_first_time_image_id), ignore_index=True)
+        df_first_time_image_id = None
 
     if save_json:
         export_dataset_as_json(df, data_type)
