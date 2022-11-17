@@ -1,3 +1,7 @@
 
 *.pyc
 garbage_can.py
+garbage_can_2.py
+.idea/ComputerVisionMFGM.iml
+.idea/misc.xml
+*.jpg

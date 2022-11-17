@@ -49,7 +49,7 @@ def get_shoe_subset(data_type='training',
     # TO-BE-GENERALIZED VARIABLES OVER
 
     if verbose > 0:
-        print(f"### CURATED DATASET FOR APPAREL CLASS '{apparel_class}' ({data_type})###")
+        print(f"### CURATED DATASET FOR APPAREL CLASS '{apparel_class}' ({data_type}) ###")
 
     # task-to-labels map
     rawdata = iM.import_rawdata(data_type='training', delete_orphan_entries=False, save_json=False, verbose=0)

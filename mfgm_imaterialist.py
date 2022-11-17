@@ -121,6 +121,7 @@ def import_rawdata(
         data_type='training',
         dataset_size=None,
         freeloader_mode=True,
+        attempt_downloading_images=True,
         delete_orphan_entries=True,
         save_json=True,
         verbose=2) -> pd.DataFrame:
@@ -130,6 +131,9 @@ def import_rawdata(
     :param data_type: Either 'training' or 'validation'. 'test' is currently not supported
     :param dataset_size: How many entries to look into. If not specified, DATASET_numberOfEntries is used
     :param freeloader_mode: If enough images are already present, no downloading is attempted and the json is constructed around the available files
+    :param attempt_downloading_images: If false, images are not downloaded no matter what
+    :param delete_orphan_entries: If true, entries that don't have their image downloaded are deleted
+    :param save_json: If true, the [data_type]Data.json file is saved.
     :param verbose: Level of verbosity.
     :return: a pandas.DataFrame
     """
@@ -222,17 +226,6 @@ NOTE: If you want to download more images than you have locally, delete the pres
     else:
         if verbose > 1: print(f"{folder_path} folder created")
 
-    """
-    for key in np.unique(list(apparel_class_map.values())):
-        try:
-            other_path = f"{folder_path}/{key}"
-            os.mkdir(other_path)
-        except FileExistsError as error:
-            if verbose > 1: print(f"{other_path} folder already exists")
-        else:
-            if verbose > 1: print(f"{other_path} folder created")
-    """
-
     if (not freeloader_mode) and verbose > 0: print("Downloading images...")
 
     if verbose > 1:
@@ -262,7 +255,7 @@ NOTE: If you want to download more images than you have locally, delete the pres
 
     if (not freeloader_mode) and verbose > 1: print(f"Before downloading any new images, {np.sum(image_found)} images were present")
 
-    if not freeloader_mode:
+    if (not freeloader_mode) and attempt_downloading_images:
         # TODO: iterating over df and not df_images is inefficient. however, df_images does not have the apparelClass column.
         for i, row in df[~image_found].iterrows():
             image_path = image_path_func(row['imageId'])  # {row['apparelClass']}/
@@ -285,6 +278,10 @@ NOTE: If you want to download more images than you have locally, delete the pres
                       end="")
                 print(f"\r[{i_ / I * 100:.0f}%] ETA: {MISC.timeformat(eta)}", end=endch)
 
+    else:
+        if verbose > 0:
+            print(f"Due to freeloader mode being enabled or attempt_downloading_images being false, no new image was downloaded")
+
     if (not freeloader_mode) and verbose > 1:
         a = np.mean(expected)
         b = 2 * np.std(expected)
@@ -292,18 +289,16 @@ NOTE: If you want to download more images than you have locally, delete the pres
 
     if (not freeloader_mode) and verbose > 0: print("Images downloaded successfully")
 
-    df['imageWasFound'] = image_found
-
     if delete_orphan_entries:
         if verbose > 0: print("Removing data entries with no images...")
         df = df[image_found]
         if verbose > 0: print(
-            f"Data entries with blank images successfully removed (Dataset is now {np.sum(image_found)} entries)")
+            f"Data entries with blank images successfully removed. Dataset (with images) is now {np.sum(image_found)} entries")
     else:
-        if verbose > 0: print(f"Dataset is now {np.sum(image_found)} entries")
+        if verbose > 0: print(f"Dataset (with images) is now {np.sum(image_found)} entries")
 
-    #keep only the columns we care about. 'url' and 'imageWasFound' are a waste of space
-    df.drop(columns=['url', 'imageWasFound'], inplace=True)
+    #keep only the columns we care about. 'url' are a waste of space
+    df.drop(columns=['url'], inplace=True)
 
     if save_json:
         export_dataset_as_json(df, data_type)
