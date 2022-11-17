@@ -3,8 +3,8 @@ import os
 import tensorflow as tf
 import pandas as pd
 
-import import_imaterialist
-import computervision_parameters as PARAMS
+import mfgm_imaterialist
+import mfgm_parameters as PARAMS
 
 from keras.utils import to_categorical
 from keras import layers

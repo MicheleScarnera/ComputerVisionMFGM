@@ -1,5 +1,5 @@
-import computervision_parameters as PARAMS
-import computervision_misc as MISC
+import mfgm_parameters as PARAMS
+import mfgm_misc as MISC
 
 import os
 import os.path
@@ -60,11 +60,12 @@ def purge_bad_images(data_type='training'):
 
     path = PARAMS.IMAGES_filepath[data_type]
 
-    print(f"Purging bad images from {path}...")
+    print_first_part = f"Purging bad images from {path}..."
+    print(print_first_part, end="\r")
     for (root, _, filenames) in os.walk(path):
         before = len(filenames)
         removed = 0
-        for file_name in filenames:
+        for i, file_name in enumerate(filenames):
             file_path = os.path.join(root, file_name)
             if os.path.exists(file_path):
                 with open(file_path, "rb") as f:
@@ -73,6 +74,13 @@ def purge_bad_images(data_type='training'):
                     except:
                         os.remove(file_path)
                         removed = removed + 1
+
+            print("                                               ", end="\r")
+            endch = "\r"
+            if (i+1) == before:
+                endch = "\n"
+
+            print(f"{print_first_part} {(i+1) / before * 100:.1f}%", end=endch)
 
         break
 

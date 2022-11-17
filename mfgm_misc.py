@@ -1,7 +1,7 @@
 import json
 import os
 import pandas as pd
-import computervision_parameters as PARAMS
+import mfgm_parameters as PARAMS
 
 def timeformat(secs):
     if type(secs) is not int: secs = int(secs)

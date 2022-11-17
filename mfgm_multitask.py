@@ -6,10 +6,10 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 
-import import_imaterialist
-import import_imaterialist as iM
-import computervision_parameters as PARAMS
-import computervision_misc as MISC
+import mfgm_imaterialist
+import mfgm_imaterialist as iM
+import mfgm_parameters as PARAMS
+import mfgm_misc as MISC
 
 import keras
 from keras.utils import to_categorical
@@ -33,6 +33,7 @@ np.random.seed(8000)
 def get_shoe_subset(data_type='training',
                     apparel_class='shoe',
                     tasks=('shoe:gender', 'shoe:age', 'shoe:color'),
+                    randomize_missing_labels=True,
                     verbose=2):
     """
     NOTE: this can be generalized for other apparel classes. All of the variables that would need to be changed
@@ -140,11 +141,10 @@ def get_shoe_subset(data_type='training',
         print("Making labels integers...")
 
     def index_of(t, j, x):
-        joker_mode = False
         try:
             return task_to_labels[t].index(x)
         except ValueError:
-            if data_type == 'training' and joker_mode:
+            if randomize_missing_labels: # data_type == 'training' and
                 return np.random.choice(range(number_of_labels[j]))
 
             return -1
@@ -199,11 +199,11 @@ def get_untrained_multitask_shoe_model(
     main_branch = tf.keras.layers.MaxPooling2D(pool_size=maxpooling_shape, name="maxpool_main_1")(main_branch)
     main_branch = tf.keras.layers.Conv2D(filters=16, kernel_size=(kernel_size, kernel_size), padding='same', activation='relu', name="conv_main_2")(main_branch)
     main_branch = tf.keras.layers.MaxPooling2D(pool_size=maxpooling_shape, name="maxpool_main_2")(main_branch)
-    main_branch = tf.keras.layers.Conv2D(filters=64, kernel_size=(kernel_size, kernel_size), padding='same', activation='relu', name="conv_main_3")(main_branch)
+    main_branch = tf.keras.layers.Conv2D(filters=32, kernel_size=(kernel_size, kernel_size), padding='same', activation='relu', name="conv_main_3")(main_branch)
     main_branch = tf.keras.layers.Flatten()(main_branch)
 
     # preventing gradient explosion: normalize, tanh activation
-    main_branch = tf.keras.layers.BatchNormalization()(main_branch)
+    # main_branch = tf.keras.layers.BatchNormalization()(main_branch)
     main_branch = tf.keras.layers.Dense(128, activation='tanh', name="dense_main")(main_branch)
 
     # dropout to prevent overfitting
@@ -235,7 +235,7 @@ def get_untrained_multitask_shoe_model(
 
         task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_{task_name}_1")(main_branch)
         task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_2")(task_branch)
-        task_branch = tf.keras.layers.Dense(8 * n, activation='tanh', name=f"dense_{task_name}_3")(task_branch)
+        # task_branch = tf.keras.layers.Dense(8 * n, activation='tanh', name=f"dense_{task_name}_3")(task_branch)
         # task_branch = tf.keras.layers.Dense(2 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
         task_branch = tf.keras.layers.Dense(n, activation=lastlayer_activation, name=task_name)(task_branch)
 
@@ -280,6 +280,7 @@ def train_multitask_shoe_model(
         number_of_labels,
         fill_rate_train,
         fill_rate_val,
+        missing_labels_were_randomized,
         task_reformat,
         image_size = 256,
         batch_size = 32,
@@ -311,7 +312,7 @@ def train_multitask_shoe_model(
         directory=PARAMS.IMAGES_filepath['training'],
         x_col='imageName',
         y_col=tasks,
-        classes=classes_map,
+        #classes=classes_map,
         target_size=(image_size, image_size),
         batch_size=batch_size,
         class_mode='multi_output'
@@ -322,7 +323,7 @@ def train_multitask_shoe_model(
         directory=PARAMS.IMAGES_filepath['validation'],
         x_col='imageName',
         y_col=tasks,
-        classes=classes_map,
+        #classes=classes_map,
         target_size=(image_size, image_size),
         batch_size=batch_size,
         class_mode='multi_output'
@@ -369,7 +370,7 @@ def train_multitask_shoe_model(
 
     earlystop = EarlyStopping(monitor='val_loss',
                               min_delta=0.001,
-                              patience=epochs,
+                              patience=epochs // 3,
                               verbose=1,
                               mode='auto',
                               restore_best_weights=True)
@@ -377,10 +378,14 @@ def train_multitask_shoe_model(
     traininglog_path = f"{file_path}_trainingLog.csv"
     csv_logger = CSVLogger(traininglog_path, separator=",", append=False)
 
-    print("""
-NOTE: any 'accuracy' metrics during training are severely underestimated,
+    if len(tasks) > 1:
+        print("""
+NOTE:
+As long as there is more than one task in the network,
+any 'accuracy' metrics during training are severely underestimated,
 due to them treating missing labels as a failed prediction.
 This is accounted for in the training log CSV file, but not while the model is being trained.
+(The adjustment is also done properly when the missing labels are replaced with a random one)
 """)
 
     history = model.fit(train_generator,
@@ -409,15 +414,27 @@ This is accounted for in the training log CSV file, but not while the model is b
     for column in traininglog_df.columns:
         if "accuracy" in column:
             for task_org, task_reformatted in task_reformat.items():
-                if (task_reformatted in column):
+                if task_reformatted in column:
                     # contains 'accuracy' in column name AND contains i.e. 'shoe.gender' in column name
-                    # => divide by shoe:gender's fill rate
+                    # => adjust
 
-                    # note: training data and validation data fill rate are potentially different
+                    # we need: observed accuracy, fill rate, number of labels (in the "missing_labels_were_randomized" case)
+                    observed_accuracy = traininglog_df[column]
+
+                    # fill rate
+                    # training data and validation data fill rate are potentially different
                     if "val" in column:
-                        traininglog_df[column] = traininglog_df[column] / fill_rate_val[task_org]
+                        fill_rate = fill_rate_val[task_org]
                     else:
-                        traininglog_df[column] = traininglog_df[column] / fill_rate_train[task_org]
+                        fill_rate = fill_rate_train[task_org]
+
+                    if missing_labels_were_randomized:
+                        # number of labels
+                        n = number_of_labels[tasks.index(task_org)]
+
+                        traininglog_df[column] = (observed_accuracy - (1. - fill_rate) / n) / fill_rate
+                    else:
+                        traininglog_df[column] = observed_accuracy / fill_rate
 
 
     traininglog_df.to_csv(traininglog_path)
@@ -433,56 +450,4 @@ This is accounted for in the training log CSV file, but not while the model is b
             break
 
     return history
-    
 
-#iM.get_dataset()
-#iM.get_dataset('validation')
-def run():
-    iM.purge_bad_images('training')
-    iM.purge_bad_images('validation')
-
-    """
-    tasks = ['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
-             'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
-             
-    sorted:
-    
-    tasks = ['shoe:gender', 'shoe:age', 'shoe:type', 'shoe:up height', 'shoe:back counter type', 'shoe:closure type',
-             'shoe:heel type', 'shoe:toe shape', 'shoe:decoration', 'shoe:flat type', 'shoe:color', 'shoe:material']
-    """
-    tasks = ['shoe:gender', 'shoe:age', 'shoe:type', 'shoe:up height', 'shoe:back counter type', 'shoe:closure type',
-             'shoe:heel type', 'shoe:toe shape', 'shoe:decoration', 'shoe:flat type', 'shoe:color', 'shoe:material']
-
-    dataset_train, number_of_labels, fill_rate_train = get_shoe_subset(
-        data_type='training',
-        apparel_class='shoe',
-        tasks=tasks,
-        verbose=1)
-
-    dataset_validation, _, fill_rate_val = get_shoe_subset(
-        data_type='validation',
-        apparel_class='shoe',
-        tasks=tasks,
-        verbose=1)
-
-    model, task_reformat = get_untrained_multitask_shoe_model(
-        tasks_arg=tasks,
-        number_of_labels=number_of_labels,
-        verbose=1)
-
-    # hypothesis: batch_size and epochs need to be VERY high,
-    # as most of the data fed is missing labels that cannot train
-    train_multitask_shoe_model(
-        model=model,
-        df_train=dataset_train,
-        df_validation=dataset_validation,
-        tasks=tasks,
-        number_of_labels=number_of_labels,
-        fill_rate_train=fill_rate_train,
-        fill_rate_val=fill_rate_val,
-        task_reformat=task_reformat,
-        batch_size=64,
-        epochs=60,
-        verbose=1)
-
-run()
