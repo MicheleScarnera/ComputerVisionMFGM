@@ -239,7 +239,7 @@ def get_untrained_multitask_shoe_model(
         # task_branch = tf.keras.layers.Dense(2 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
         task_branch = tf.keras.layers.Dense(n, activation=lastlayer_activation, name=task_name)(task_branch)
 
-        weights_map[task_name] = np.round(gamma**i, decimals=2)
+        weights_map[task_name] = gamma**i
 
         if n == 1:
             loss_map[task_name] = masked_loss_function
@@ -250,6 +250,12 @@ def get_untrained_multitask_shoe_model(
 
         if verbose > 0:
             print(f"Task {i+1}/{number_of_tasks} ({tasks[i]}) appended")
+
+    # normalize weights
+    weights_sum = np.sum(list(weights_map.values()))
+
+    for key, value in weights_map.items():
+        weights_map[key] = np.round(value / weights_sum, decimals=4)
 
     model = tf.keras.Model(inputs=inputs, outputs=task_branches)
 
@@ -368,9 +374,14 @@ def train_multitask_shoe_model(
 
     file_path = f"{folder_path}/{PARAMS.CV_MODELS_SHOE_MULTITASK_filename}"
 
+    patience = np.max([epochs // 3, 6])
+
+    if verbose > 0:
+        print(f"Early stopping patience: {patience}")
+
     earlystop = EarlyStopping(monitor='val_loss',
                               min_delta=0.001,
-                              patience=epochs // 3,
+                              patience=patience,
                               verbose=1,
                               mode='auto',
                               restore_best_weights=True)
@@ -405,17 +416,43 @@ This is accounted for in the training log CSV file, but not while the model is b
     if verbose > 0:
         print(f"{file_path} saved")
 
-    # divide all accuracies by the task's fill rate
+    # prep the training log CSV
     if verbose > 0:
-        print("Adjusting accuracy metrics in the training log...")
+        print("Prepping the training log...")
 
     traininglog_df = pd.read_csv(traininglog_path)
 
+    # rename columns
+    rename_dict = dict()
+
+    for column in traininglog_df.columns:
+        for task_original, task_reformatted in task_reformat.items():
+            # objective:
+            # rename 'shoe.color_sparse_categorical_accuracy' into 'shoe:color_accuracy'
+            # rename 'val_shoe.color_sparse_categorical_accuracy' into 'val_shoe:color_accuracy'
+
+            if task_reformatted in column:
+                # we found that 'shoe.color' is in column
+                new_column = column
+
+                # 'shoe.color' to 'shoe:color'
+                new_column = new_column.replace(task_reformatted, task_original)
+
+                # self-explanatory
+                new_column = new_column.replace("_sparse_categorical_accuracy", "_accuracy")
+
+                # no need to act on "val_"
+
+                rename_dict[column] = new_column
+
+    traininglog_df.rename(columns=rename_dict, inplace=True)
+
+    # adjust accuracy values
     for column in traininglog_df.columns:
         if "accuracy" in column:
-            for task_org, task_reformatted in task_reformat.items():
-                if task_reformatted in column:
-                    # contains 'accuracy' in column name AND contains i.e. 'shoe.gender' in column name
+            for task in tasks:
+                if task in column:
+                    # contains 'accuracy' in column name AND contains i.e. 'shoe:color' in column name
                     # => adjust
 
                     # we need: observed accuracy, fill rate, number of labels (in the "missing_labels_were_randomized" case)
@@ -424,23 +461,29 @@ This is accounted for in the training log CSV file, but not while the model is b
                     # fill rate
                     # training data and validation data fill rate are potentially different
                     if "val" in column:
-                        fill_rate = fill_rate_val[task_org]
+                        fill_rate = fill_rate_val[task]
                     else:
-                        fill_rate = fill_rate_train[task_org]
+                        fill_rate = fill_rate_train[task]
 
                     if missing_labels_were_randomized:
                         # number of labels
-                        n = number_of_labels[tasks.index(task_org)]
+                        n = number_of_labels[tasks.index(task)]
 
                         traininglog_df[column] = (observed_accuracy - (1. - fill_rate) / n) / fill_rate
                     else:
                         traininglog_df[column] = observed_accuracy / fill_rate
 
+    # add "random guess" columns
+    for task in tasks:
+        column_name = f"{task}_randomguess"
+        value = 1. / number_of_labels[tasks.index(task)]
+
+        traininglog_df[column_name] = value
 
     traininglog_df.to_csv(traininglog_path)
 
     if verbose > 0:
-        print("Adjustment successful")
+        print("Prepping successful")
 
     if verbose > 0:
         print("Performing an example prediction...")
