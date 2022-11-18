@@ -3,23 +3,18 @@ import mfgm_multitask as mt
 
 
 def run():
-    im.purge_bad_images('training')
-    im.purge_bad_images('validation')
+    purge = True
 
-    """
-    tasks = ['shoe:gender', 'shoe:type', 'shoe:age', 'shoe:closure type', 'shoe:up height', 'shoe:heel type',
-             'shoe:back counter type', 'shoe:material', 'shoe:color', 'shoe:decoration', 'shoe:toe shape', 'shoe:flat type']
-
-    sorted:
-
-    tasks = ['shoe:gender', 'shoe:age', 'shoe:type', 'shoe:up height', 'shoe:back counter type', 'shoe:closure type',
-             'shoe:heel type', 'shoe:toe shape', 'shoe:decoration', 'shoe:flat type', 'shoe:color', 'shoe:material']
-    """
-    # ['shoe:up height', 'shoe:age', 'shoe:color']
     apparel_class = 'all'
-    tasks = ['common:apparel_class', 'common:gender', 'common:age', 'common:color', 'common:material']
+    tasks = ['common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender']
+    batch_size = 128
+    epochs = 20
+    randomize_missing_labels = False
 
-    randomize_missing_labels = True
+    if purge:
+        print("Running")
+        im.purge_bad_images('training')
+        im.purge_bad_images('validation')
 
     dataset_train, number_of_labels, fill_rate_train = mt.get_multitask_subset(
         data_type='training',
@@ -52,8 +47,8 @@ def run():
         fill_rate_train=fill_rate_train,
         fill_rate_val=fill_rate_val,
         task_reformat=task_reformat,
-        batch_size=128,
-        epochs=60,
+        batch_size=batch_size,
+        epochs=epochs,
         verbose=1)
 
 

@@ -51,9 +51,29 @@ def get_multitask_subset(data_type='training',
     if verbose > 0:
         print(f"### CURATED DATASET FOR APPAREL CLASS '{apparel_class}' ({data_type}) ###")
 
+
+    if verbose > 1:
+        print(f"Getting task-to-labels map...")
+
+    dataset = None
+
     # task-to-labels map
-    rawdata = iM.import_rawdata(data_type='training', delete_orphan_entries=False, save_json=False, verbose=0)
-    task_to_labels = MISC.get_task_to_all_values_map(training_dataset=rawdata)
+    if data_type != 'training':
+        rawdata = iM.get_dataset('training')
+
+        """
+                iM.import_rawdata(data_type='training',
+                                                    delete_orphan_entries=False,
+                                                    save_json=False,
+                                                    attempt_downloading_images=False,
+                                                    verbose=0)
+                """
+
+        task_to_labels = MISC.get_task_to_all_values_map(training_dataset=rawdata)
+    else:
+        dataset = iM.get_dataset(data_type)
+
+        task_to_labels = MISC.get_task_to_all_values_map(training_dataset=dataset)
 
     # remove tasks not of this apparel class from task_to_labels
     # i.e. remove 'dress:length' or 'shoe:pump type' from the shoe tasks we're interested in
@@ -67,7 +87,8 @@ def get_multitask_subset(data_type='training',
         number_of_labels.append(len(task_to_labels[task]))
 
     # get dataset of only the relevant apparel class
-    dataset = iM.get_dataset(data_type)
+    print(f"Importing {data_type} dataset...")
+    if dataset is None: dataset = iM.get_dataset(data_type)
 
     if apparel_class in ('shoe', 'dress', 'outerwear', 'pants'):
         dataset = dataset[dataset['apparelClass'] == apparel_class]
@@ -363,7 +384,7 @@ def train_multitask_model(
 
     file_path = f"{folder_path}/{PARAMS.MFGM_MULTITASK_MODEL_filename}"
 
-    patience = np.max([epochs // 3, 6])
+    patience = np.max([epochs // 8, 6])
 
     if verbose > 0:
         print(f"Early stopping patience: {patience}")

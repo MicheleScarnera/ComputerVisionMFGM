@@ -13,6 +13,7 @@ import time
 
 import warnings
 
+
 def save_image_file(path,url_list, verbose = 0):
     if type(url_list) is str:
         url_list = [url_list]
@@ -55,6 +56,7 @@ def save_image_file(path,url_list, verbose = 0):
     if verbose > 0: print("No image found")
     return False #np.empty(shape=(1, 1))
 
+
 def purge_bad_images(data_type='training'):
     warnings.filterwarnings("error")
 
@@ -66,27 +68,34 @@ def purge_bad_images(data_type='training'):
         before = len(filenames)
         removed = 0
         for i, file_name in enumerate(filenames):
+            delete_file = False
+
             file_path = os.path.join(root, file_name)
             if os.path.exists(file_path):
                 with open(file_path, "rb") as f:
                     try:
-                        img = pil_image.open(io.BytesIO(f.read()))
+                        img = pil_image.open(io.BytesIO(f.read())).load()
                     except:
-                        os.remove(file_path)
-                        removed = removed + 1
+                        delete_file = True
 
-            print("                                               ", end="\r")
-            endch = "\r"
-            if (i+1) == before:
-                endch = "\n"
+            if delete_file:
+                os.remove(file_path)
+                removed = removed + 1
 
-            print(f"{print_first_part} {(i+1) / before * 100:.1f}%", end=endch)
+            final_step = (i+1) == before
+
+            if i % 10 == 0 or final_step:
+                print("                               ", end="\r")
+                endch = "\r"
+                if (i+1) == before:
+                    endch = "\n"
+
+                print(f"{print_first_part} {(i+1) / before * 100:.1f}%, found {removed}", end=endch)
 
         break
 
     print(f"{removed} images removed from {before} images")
     warnings.filterwarnings("default")
-
 
 
 def export_dataset_as_json(df, data_type='training'):
@@ -117,6 +126,49 @@ def import_dataset_from_json(data_type='training'):
         return None
 
 
+def kill_rare_labels(data, task_name, threshold, label_map=None, precalculated_bad_labels = None, verbose=1):
+    """
+    Originally written by Michelle Luijten
+
+    :param data:
+    :param task_name:
+    :param threshold:
+    :param label_map:
+    :param precalculated_bad_labels:
+    :return:
+    """
+    if label_map is None:
+        label_map = MISC.get_label_map()
+
+    # select subset of data only containing these task-ids
+    subset = data[data['taskName'] == task_name]
+
+    # count how often each label id occurs
+    a = subset.groupby('labelId').count()
+
+    # calculate ratio
+    df = pd.DataFrame({'labelId': a.index, 'counts': a['imageId']}).reset_index(drop=True)
+    df['ratio'] = df['counts'] / sum(df['counts'])
+
+    # group every label that is used in less than 1% (threshold) of the cases
+    if precalculated_bad_labels is None:
+        to_replace = list(df.loc[df['ratio'] < threshold, 'labelId'])
+    else:
+        to_replace = list(df.loc[df['labelId'].isin(precalculated_bad_labels), 'labelId'])
+
+    l = len(to_replace)
+    if l > 0 and verbose > 0:
+        bad_labels = [label_map[x] for x in to_replace]
+
+        print(f"The task {task_name} has {l} labels (~{l / len(df) * 100:.0f}% of labels) that are present less than {threshold * 100:.0f}% of the time: {bad_labels}")
+
+    # set this labelId to 999
+    data.loc[data['labelId'].isin(to_replace), 'labelId'] = "999"
+
+    data['labelName'] = data['labelId'].apply(lambda x: label_map[x])
+
+    return data, to_replace
+
 def import_rawdata(
         data_type='training',
         dataset_size=None,
@@ -124,9 +176,11 @@ def import_rawdata(
         attempt_downloading_images=True,
         delete_orphan_entries=True,
         add_common_tasks=True,
+        kill_common_task_label_frequency_threshold=0.01,
+        precalculated_bad_labels=None,
         add_apparel_class_as_task=True,
         save_json=True,
-        verbose=2) -> pd.DataFrame:
+        verbose=2):
     """
     Forcibly creates a new [data_type]Data.json file. Returns the created dataframe.
 
@@ -136,6 +190,8 @@ def import_rawdata(
     :param attempt_downloading_images: If false, images are not downloaded no matter what
     :param delete_orphan_entries: If true, entries that don't have their image downloaded are deleted
     :param add_common_tasks: If true, any entry that specifies common tasks like 'shoe:color' is duplicated, with its task name changed to 'color'
+    :param kill_common_task_label_frequency_threshold: Among common tasks, if a label is present less than X% of the time, it is replaced with 'other'
+    :param precalculated_bad_labels: Used by non-training sets. Used to make sure other sets remove the same labels as the training set.
     :param add_apparel_class_as_task: If true, the apparel class is added as a task
     :param save_json: If true, the [data_type]Data.json file is saved.
     :param verbose: Level of verbosity.
@@ -320,6 +376,41 @@ NOTE: If you want to download more images than you have locally, delete the pres
         df = pd.concat(objs=(df, df_with_common_tasks), ignore_index=True)
         df_with_common_tasks = None
 
+        common_tasks = np.unique([value for value in common_mapper.values() if value is not None])
+
+        if data_type != 'training' and precalculated_bad_labels is None:
+            if verbose > 0:
+                print(f"""
+WARNING: A {data_type} set was not given the precalculated_bad_labels argument.
+It will be calculated to make sure the removed labels match with the training set.
+You probably already have calculated the training test somewhere before.
+""")
+
+            _, precalculated_bad_labels = import_rawdata('training',
+                                                         dataset_size=-1,
+                                                         freeloader_mode=True,
+                                                         attempt_downloading_images=False,
+                                                         save_json=False,
+                                                         verbose=0)
+        elif data_type == 'training':
+            precalculated_bad_labels = []
+
+        if data_type == 'training':
+            p = None
+        else:
+            p = precalculated_bad_labels
+
+        for common_task in common_tasks:
+            df, b = kill_rare_labels(data=df,
+                                    task_name=common_task,
+                                    threshold=kill_common_task_label_frequency_threshold,
+                                    precalculated_bad_labels=p,
+                                    label_map=label_map)
+
+            if precalculated_bad_labels is not None:
+                for _b in b:
+                    precalculated_bad_labels.append(_b)
+
     if add_apparel_class_as_task:
         if verbose > 0: print(f"Adding apparel_class task...")
 
@@ -339,7 +430,8 @@ NOTE: If you want to download more images than you have locally, delete the pres
         export_dataset_as_json(df, data_type)
 
     if verbose > 2: print(f"Printing df...\n{df}")
-    return df
+
+    return df, precalculated_bad_labels
 
 
 def get_dataset(data_type='training', verbose = 1) -> pd.DataFrame:
@@ -359,7 +451,7 @@ def get_dataset(data_type='training', verbose = 1) -> pd.DataFrame:
         dataset = import_dataset_from_json(data_type)
     else:
         if verbose > 0: print(f"File {PARAMS.EXPORTEDJSON_filepath[data_type]} not present, getting raw data...")
-        dataset = import_rawdata(data_type)
+        dataset, _ = import_rawdata(data_type)
 
     return dataset
 

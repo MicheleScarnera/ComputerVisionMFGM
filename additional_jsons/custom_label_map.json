@@ -1539,6 +1539,10 @@
     {
       "labelName": "pants",
       "labelId": "385"
+    },
+    {
+      "labelName": "other",
+      "labelId": "999"
     }
   ]
 }
