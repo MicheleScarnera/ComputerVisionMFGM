@@ -179,6 +179,13 @@ def get_multitask_subset(data_type='training',
         print("FINAL FORM OF THE DATASET... (first 5 entries)")
         print(dataset.iloc[0:5, :])
 
+    if verbose > 1:
+        print("Saving task-to-labels mapping...")
+
+    dict_location = f"{PARAMS.MISC_models_path}/{PARAMS.MFGM_MULTITASK_MODEL_filename}_tasktolabelsmap.json"
+    with open(dict_location, "w") as fp:
+        json.dump(task_to_labels, fp)
+
     return dataset, number_of_labels, fill_rate
 
 
