@@ -8,8 +8,10 @@ def run():
     apparel_class = 'all'
     tasks = ['common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender']
     batch_size = 128
-    epochs = 20
+    epochs = 60
     randomize_missing_labels = False
+
+    private_dense_layers = False
 
     if purge:
         print("Running")
@@ -33,6 +35,7 @@ def run():
     model, task_reformat = mt.get_untrained_multitask_model(
         tasks_arg=tasks,
         number_of_labels=number_of_labels,
+        private_dense_layers=private_dense_layers,
         verbose=1)
 
     # hypothesis: batch_size and epochs need to be VERY high,

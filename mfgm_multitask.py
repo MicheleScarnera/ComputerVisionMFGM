@@ -194,6 +194,7 @@ def get_untrained_multitask_model(
         kernel_size = 4,
         maxpooling_size = 4,
         dropout_rate = 0.5,
+        private_dense_layers = False,
         gamma = 0.95,
         tasks_arg = ('placeholder_1', 'placeholder_2', 'placeholder_3'),
         number_of_labels = (2,2,4),
@@ -232,12 +233,17 @@ def get_untrained_multitask_model(
     main_branch = tf.keras.layers.Conv2D(filters=32, kernel_size=(kernel_size, kernel_size), padding='same', activation='relu', name="conv_main_3")(main_branch)
     main_branch = tf.keras.layers.Flatten()(main_branch)
 
-    # preventing gradient explosion: normalize, tanh activation
-    # main_branch = tf.keras.layers.BatchNormalization()(main_branch)
-    main_branch = tf.keras.layers.Dense(128, activation='tanh', name="dense_main")(main_branch)
-
     # dropout to prevent overfitting
     main_branch = tf.keras.layers.Dropout(dropout_rate, name="dropout_main")(main_branch)
+
+    # preventing gradient explosion: normalize, tanh activation
+    # main_branch = tf.keras.layers.BatchNormalization()(main_branch)
+    if not private_dense_layers:
+        # in the "~1.4mln parameters" scenario, we have 160 and 128 here
+        main_branch = tf.keras.layers.Dense(384, activation='relu', name="dense_main_1")(main_branch)
+        main_branch = tf.keras.layers.Dense(384, activation='relu', name="dense_main_2")(main_branch)
+
+    main_branch = tf.keras.layers.Dense(128, activation='tanh', name="dense_main_last")(main_branch)
 
     if verbose > 0:
         print("Defining multi-task layers...")
@@ -253,11 +259,14 @@ def get_untrained_multitask_model(
 
         task_name = f'{tasks[i]}'
 
-        task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_{task_name}_1")(main_branch)
-        task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_2")(task_branch)
-        # task_branch = tf.keras.layers.Dense(8 * n, activation='tanh', name=f"dense_{task_name}_3")(task_branch)
-        # task_branch = tf.keras.layers.Dense(2 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
-        task_branch = tf.keras.layers.Dense(n, activation=lastlayer_activation, name=task_name)(task_branch)
+        if private_dense_layers:
+            task_branch = tf.keras.layers.Dense(16 * n, activation='relu', name=f"dense_{task_name}_1")(main_branch)
+            task_branch = tf.keras.layers.Dense(8 * n, activation='relu', name=f"dense_{task_name}_2")(task_branch)
+            # task_branch = tf.keras.layers.Dense(8 * n, activation='tanh', name=f"dense_{task_name}_3")(task_branch)
+            # task_branch = tf.keras.layers.Dense(2 * n, activation='relu', name=f"dense_{task_name}_4")(task_branch)
+            task_branch = tf.keras.layers.Dense(n, activation=lastlayer_activation, name=task_name)(task_branch)
+        else:
+            task_branch = tf.keras.layers.Dense(n, activation=lastlayer_activation, name=task_name)(main_branch)
 
         weights_map[task_name] = gamma**i
 
@@ -391,7 +400,7 @@ def train_multitask_model(
 
     file_path = f"{folder_path}/{PARAMS.MFGM_MULTITASK_MODEL_filename}"
 
-    patience = np.max([epochs // 8, 6])
+    patience = int(np.max([np.sqrt(epochs), 6])) + 1
 
     if verbose > 0:
         print(f"Early stopping patience: {patience}")
