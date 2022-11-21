@@ -1,10 +1,15 @@
 import string
 
+from tensorflow import keras
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 sns.set_theme()
+
+def fancify_tasks(tasks):
+    return [string.capwords(task.split(':')[1].replace("_", " ")) for task in tasks]
 
 def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None):
     """
@@ -32,10 +37,12 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None)
     training_color = 'blue'
     validation_color = 'orange'
     randomguess_color = 'green'
+
+    fancy_tasks = fancify_tasks(tasks)
     
     for i in range(len(tasks)):
         task = tasks[i]
-        task_fancy = string.capwords(task.split(':')[1].replace("_", " "))
+        task_fancy = fancy_tasks[i]
 
         train_accuracy_name = task + '_accuracy'
         val_accuracy_name = 'val_' + task + '_accuracy'
@@ -112,6 +119,27 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None)
                 plt.show()
         
     return
+
+"""
+def make_conditional_accuracy_bar_graphs(model_path, df, generator, tasks):
+
+    model = keras.models.load_model(model_path)
+
+    if len(df) != generator.batch_size:
+        print("len(df) and generator.batch_size are not equal")
+
+
+    for data_batch, labels_batch in generator:
+        predicted_labels = model.predict(data_batch)
+        break
+
+    print(predicted_labels)
+
+    #ncols = 2
+    #fig, axes = plt.subplots(nrows=np.ceil(len(tasks) / ncols), ncols=ncols)
+
+    #for a, ax in enumerate(axes):
+"""
 
 """
 csv_path = 'shoeMultiTaskModel_trainingLog (3).csv'

@@ -324,6 +324,47 @@ def get_untrained_multitask_model(
 
     return model, task_reformat
 
+def get_generators(df_train, df_validation, tasks, image_size=256, batch_size=32):
+    image_datagen = ImageDataGenerator(
+        rescale=1. / 255,
+        rotation_range=45,
+        width_shift_range=0.25,
+        height_shift_range=0.25,
+        fill_mode='nearest',
+        horizontal_flip=True,
+        vertical_flip=True,
+    )
+
+    if df_train is not None:
+        train_generator = image_datagen.flow_from_dataframe(
+            dataframe=df_train,
+            directory=PARAMS.IMAGES_filepath['training'],
+            x_col='imageName',
+            y_col=tasks,
+            # classes=classes_map,
+            target_size=(image_size, image_size),
+            batch_size=batch_size,
+            class_mode='multi_output'
+        )
+    else:
+        train_generator = None
+
+    if df_validation is not None:
+        validation_generator = image_datagen.flow_from_dataframe(
+            dataframe=df_validation,
+            directory=PARAMS.IMAGES_filepath['validation'],
+            x_col='imageName',
+            y_col=tasks,
+            # classes=classes_map,
+            target_size=(image_size, image_size),
+            batch_size=batch_size,
+            class_mode='multi_output'
+        )
+    else:
+        validation_generator = None
+
+    return train_generator, validation_generator
+
 def train_multitask_model(
         model,
         df_train,
@@ -350,37 +391,7 @@ def train_multitask_model(
     for i, task in enumerate(tasks):
         classes_map[task] = list(range(number_of_labels[i]))
 
-    image_datagen = ImageDataGenerator(
-        rescale=1. / 255,
-        rotation_range=45,
-        width_shift_range=0.25,
-        height_shift_range=0.25,
-        fill_mode='nearest',
-        horizontal_flip=True,
-        vertical_flip=True,
-    )
-
-    train_generator = image_datagen.flow_from_dataframe(
-        dataframe=df_train,
-        directory=PARAMS.IMAGES_filepath['training'],
-        x_col='imageName',
-        y_col=tasks,
-        #classes=classes_map,
-        target_size=(image_size, image_size),
-        batch_size=batch_size,
-        class_mode='multi_output'
-    )
-
-    validation_generator = image_datagen.flow_from_dataframe(
-        dataframe=df_validation,
-        directory=PARAMS.IMAGES_filepath['validation'],
-        x_col='imageName',
-        y_col=tasks,
-        #classes=classes_map,
-        target_size=(image_size, image_size),
-        batch_size=batch_size,
-        class_mode='multi_output'
-    )
+    train_generator, validation_generator = get_generators(df_train, df_validation, tasks, image_size, batch_size)
 
     if verbose > 1:
         for data_batch, labels_batch in train_generator:
@@ -478,19 +489,38 @@ This is accounted for in the training log CSV file, but not while the model is b
             # rename 'shoe.color_sparse_categorical_accuracy' into 'shoe:color_accuracy'
             # rename 'val_shoe.color_sparse_categorical_accuracy' into 'val_shoe:color_accuracy'
 
-            if task_reformatted in column:
+            if len(tasks) > 1:
+                if task_reformatted in column:
+                    # we found that 'shoe.color' is in column
+                    new_column = column
+
+                    # 'shoe.color' to 'shoe:color'
+                    new_column = new_column.replace(task_reformatted, task_original)
+
+                    # self-explanatory
+                    new_column = new_column.replace("_sparse_categorical_accuracy", "_accuracy")
+
+                    # no need to act on "val_"
+
+                    rename_dict[column] = new_column
+            elif column != "epoch":
+                # if there is only one task, columns will be named i.e. "loss", "val_loss", "sparse_categorical_accuracy", "val_sparse_categorical_accuracy"
                 # we found that 'shoe.color' is in column
                 new_column = column
 
                 # 'shoe.color' to 'shoe:color'
-                new_column = new_column.replace(task_reformatted, task_original)
+                new_column = new_column.replace("loss", f"{task_original}_loss")
 
                 # self-explanatory
-                new_column = new_column.replace("_sparse_categorical_accuracy", "_accuracy")
+                new_column = new_column.replace("sparse_categorical_accuracy", f"{task_original}_accuracy")
 
                 # no need to act on "val_"
 
                 rename_dict[column] = new_column
+
+    if verbose > 0:
+        print("Columns in the training log CSV have been renamed:")
+        print(MISC.dictformat(rename_dict))
 
     traininglog_df.rename(columns=rename_dict, inplace=True)
 

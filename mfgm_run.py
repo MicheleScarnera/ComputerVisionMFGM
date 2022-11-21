@@ -4,8 +4,10 @@ import mfgm_parameters as PARAMS
 from datetime import datetime
 
 def run():
-    purge = True
-    micro_dataset = False
+    lightning_round = False
+
+    purge = not lightning_round
+    micro_dataset = lightning_round
 
     apparel_class = 'all'
     tasks = ['common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender']
@@ -14,6 +16,9 @@ def run():
     private_dense_layers = False
     batch_size = 128
     epochs = 60
+
+    if lightning_round:
+        epochs = 2
 
     if purge:
         print("Running")
