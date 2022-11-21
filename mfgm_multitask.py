@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 import sys
 import copy
 import tensorflow as tf
@@ -34,6 +35,8 @@ def get_multitask_subset(data_type='training',
                          apparel_class='all',
                          tasks=('shoe:gender', 'shoe:age', 'shoe:color'),
                          randomize_missing_labels=True,
+                         modelname="NAME_MISSING",
+                         micro_dataset=False,
                          verbose=2):
     """
     NOTE: this can be generalized for other apparel classes. All of the variables that would need to be changed
@@ -179,12 +182,29 @@ def get_multitask_subset(data_type='training',
         print("FINAL FORM OF THE DATASET... (first 5 entries)")
         print(dataset.iloc[0:5, :])
 
-    if verbose > 1:
-        print("Saving task-to-labels mapping...")
 
-    dict_location = f"{PARAMS.MISC_models_path}/{PARAMS.MFGM_MULTITASK_MODEL_filename}_tasktolabelsmap.json"
-    with open(dict_location, "w") as fp:
-        json.dump(task_to_labels, fp)
+    # save task-to-labels dictionary
+    if data_type == 'training':
+        if verbose > 1:
+            print("Saving task-to-labels mapping...")
+
+        # saving model
+        dict_folder = f"{PARAMS.MISC_models_path}/{modelname}"
+
+        try:
+            os.mkdir(dict_folder)
+        except FileExistsError as error:
+            if verbose > 1: print(f"{dict_folder} folder already exists")
+        else:
+            if verbose > 1: print(f"{dict_folder} folder created")
+
+        dict_location = f"{dict_folder}/tasktolabelsmap.json"
+        with open(dict_location, "w") as fp:
+            json.dump(task_to_labels, fp)
+
+    if micro_dataset:
+        print("REDUCING THE DATASET SIZE BY 10 TIMES (THIS IS ONLY MEANT TO BE USED FOR TESTING PURPOSES)")
+        dataset = dataset[[i % 10 == 0 for i in range(len(dataset))]]
 
     return dataset, number_of_labels, fill_rate
 
@@ -317,6 +337,7 @@ def train_multitask_model(
         image_size = 256,
         batch_size = 32,
         epochs = 30,
+        modelname = "MISSING_NAME",
         verbose = 1):
     """
 
@@ -389,7 +410,7 @@ def train_multitask_model(
         print("Defining callbacks...")
 
     # saving model
-    folder_path = PARAMS.MISC_models_path
+    folder_path = f"{PARAMS.MISC_models_path}/{modelname}"
 
     try:
         os.mkdir(folder_path)
@@ -398,9 +419,9 @@ def train_multitask_model(
     else:
         if verbose > 1: print(f"{folder_path} folder created")
 
-    file_path = f"{folder_path}/{PARAMS.MFGM_MULTITASK_MODEL_filename}"
+    file_path = f"{folder_path}/{modelname}"
 
-    patience = int(np.max([np.sqrt(epochs), 6])) + 1
+    patience = int(np.max([np.sqrt(epochs) + 1.0, 6]))
 
     if verbose > 0:
         print(f"Early stopping patience: {patience}")
@@ -412,7 +433,7 @@ def train_multitask_model(
                               mode='auto',
                               restore_best_weights=True)
 
-    traininglog_path = f"{file_path}_trainingLog.csv"
+    traininglog_path = f"{folder_path}/trainingLog.csv"
     csv_logger = CSVLogger(traininglog_path, separator=",", append=False)
 
     if len(tasks) > 1:
@@ -511,12 +532,13 @@ This is accounted for in the training log CSV file, but not while the model is b
     if verbose > 0:
         print("Prepping successful")
 
+    """
     if verbose > 0:
         print("Performing an example prediction...")
 
         for data_batch, labels_batch in validation_generator:
             print(model.predict(x=data_batch))
             break
-
+    """
     return history
 

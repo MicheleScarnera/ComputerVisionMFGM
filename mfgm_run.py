@@ -1,28 +1,35 @@
 import mfgm_imaterialist as im
 import mfgm_multitask as mt
-
+import mfgm_parameters as PARAMS
+from datetime import datetime
 
 def run():
     purge = True
+    micro_dataset = False
 
     apparel_class = 'all'
     tasks = ['common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender']
-    batch_size = 128
-    epochs = 60
     randomize_missing_labels = False
 
     private_dense_layers = False
+    batch_size = 128
+    epochs = 60
 
     if purge:
         print("Running")
         im.purge_bad_images('training')
         im.purge_bad_images('validation')
 
+    modelname = f"{PARAMS.MFGM_MULTITASK_MODEL_filename}_{datetime.now().strftime('%d-%m-%Y %H-%M-%S')}"
+    print(f"Model name: {modelname}")
+
     dataset_train, number_of_labels, fill_rate_train = mt.get_multitask_subset(
         data_type='training',
         apparel_class=apparel_class,
         tasks=tasks,
         randomize_missing_labels=randomize_missing_labels,
+        modelname=modelname,
+        micro_dataset=micro_dataset,
         verbose=1)
 
     dataset_validation, _, fill_rate_val = mt.get_multitask_subset(
@@ -30,6 +37,7 @@ def run():
         apparel_class=apparel_class,
         tasks=tasks,
         randomize_missing_labels=randomize_missing_labels,
+        micro_dataset=micro_dataset,
         verbose=1)
 
     model, task_reformat = mt.get_untrained_multitask_model(
@@ -52,6 +60,7 @@ def run():
         task_reformat=task_reformat,
         batch_size=batch_size,
         epochs=epochs,
+        modelname=modelname,
         verbose=1)
 
 
