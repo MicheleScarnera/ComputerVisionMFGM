@@ -182,6 +182,15 @@ def get_multitask_subset(data_type='training',
         print("FINAL FORM OF THE DATASET... (first 5 entries)")
         print(dataset.iloc[0:5, :])
 
+    # saving model
+    f = PARAMS.MISC_models_path
+
+    try:
+        os.mkdir(f)
+    except FileExistsError as error:
+        if verbose > 1: print(f"{f} folder already exists")
+    else:
+        if verbose > 1: print(f"{f} folder created")
 
     # save task-to-labels dictionary
     if data_type == 'training':

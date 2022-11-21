@@ -1,0 +1,2 @@
+epoch,common.apparel_class_loss,common.apparel_class_sparse_categorical_accuracy,common.material_loss,common.material_sparse_categorical_accuracy,loss,val_common.apparel_class_loss,val_common.apparel_class_sparse_categorical_accuracy,val_common.material_loss,val_common.material_sparse_categorical_accuracy,val_loss
+0,1.3297839164733887,0.3770023584365845,3.1283352375030518,0.04650440812110901,2.2060375213623047,1.2212355136871338,0.4643874764442444,3.1022121906280518,0.03361823409795761,2.1376473903656006
