@@ -75,6 +75,8 @@ def purge_bad_images(data_type='training'):
                 with open(file_path, "rb") as f:
                     try:
                         img = pil_image.open(io.BytesIO(f.read())).load()
+                    except KeyboardInterrupt as interrupt:
+                        raise KeyboardInterrupt()
                     except:
                         delete_file = True
 
@@ -393,7 +395,7 @@ You probably already have calculated the training test somewhere before.
                                                          save_json=False,
                                                          verbose=0)
         elif data_type == 'training':
-            precalculated_bad_labels = []
+            precalculated_bad_labels = None
 
         if data_type == 'training':
             p = None

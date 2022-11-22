@@ -10,12 +10,12 @@ def run():
     micro_dataset = lightning_round
 
     apparel_class = 'all'
-    tasks = ['common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender']
+    tasks = ['common:apparel_class'] # ['common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender']
     randomize_missing_labels = False
 
     private_dense_layers = False
     batch_size = 128
-    epochs = 60
+    epochs = 20
 
     if lightning_round:
         epochs = 2

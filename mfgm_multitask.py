@@ -1,33 +1,17 @@
 import json
 import os
-from datetime import datetime
-import sys
-import copy
 import tensorflow as tf
 import pandas as pd
 import numpy as np
 
-import mfgm_imaterialist
 import mfgm_imaterialist as iM
 import mfgm_parameters as PARAMS
 import mfgm_misc as MISC
 
-import keras
-from keras.utils import to_categorical
 from keras import losses
-from keras import layers
-from keras import models
-from keras.preprocessing import image
-from keras import backend as backend
-from keras.utils import metrics_utils
-from keras.preprocessing.image import ImageDataGenerator
-from keras import optimizers
-from keras.models import load_model
-from keras.callbacks import CSVLogger, EarlyStopping
-import matplotlib.pyplot as plt
 
-from keras.callbacks import Callback
-from sklearn.metrics import accuracy_score
+from keras.preprocessing.image import ImageDataGenerator
+from keras.callbacks import CSVLogger, EarlyStopping
 
 np.random.seed(8000)
 
