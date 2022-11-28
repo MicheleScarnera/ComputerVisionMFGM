@@ -1,14 +1,24 @@
 import string
+import json
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import keras
+
 import matplotlib.pyplot as plt
+import matplotlib.colors as plt_colors
+
+from sklearn.metrics import ConfusionMatrixDisplay as confusion_matrix
+from sklearn.linear_model import LinearRegression
+
+import mfgm_multitask as multitask
 sns.set_theme()
 
 def fancify_tasks(tasks):
     return [string.capwords(task.split(':')[1].replace("_", " ")) for task in tasks]
 
-def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha_multiplier=None, maxepochs=None, rectify_y_axis=True):
+def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha_multiplier=None, training_alpha_multiplier = 0.5, maxepochs=None, rectify_y_axis=True):
     """
 
     :param csv_paths: path to csv
@@ -16,6 +26,7 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
     :param tasks: for example ['shoe:up height', 'shoe:age', 'shoe:color']. it will make plots of these tasks (and of the overall loss/accuracy metrics)
     :param linestyles: if specified, allows linestyles to be chosen.
     :param alpha_multiplier: by how much opacity increases for every subsequent dataset. the most opaque dataset will have alpha equal to 1.
+    :param training_alpha_multiplier: multiplier for the training loss/accuracy opacity.
     :param maxepochs: set the maximum number of epochs to show.
     :param rectify_y_axis: If true, the y axes' ranges are not matplotlib's defaults.
     :return:
@@ -34,7 +45,7 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
                 linestyles.append(l[i % len(l)])
 
     if alpha_multiplier is None:
-        alpha_multiplier = (1. - 1. / len(csv_paths)) ** (-2.)
+        alpha_multiplier = 1. #(1. - 1. / len(csv_paths)) ** (-2.)
 
     datas = []
 
@@ -46,9 +57,25 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
 
     versus = " vs ".join(csv_titles)
 
-    training_color = 'blue'
-    validation_color = 'orange'
-    randomguess_color = 'green'
+    # figure out what colors to use
+    hue_start = 0.33
+    hue_increment = 1. / (len(csv_paths) + 1)
+    saturation = 0.8
+    value = 0.8
+
+    colors = []
+    hue_current = hue_start
+
+    for d in range(len(csv_paths)):
+        new_color = plt_colors.hsv_to_rgb((hue_current, saturation, value))
+        colors.append(new_color)
+
+        hue_current = hue_current + hue_increment
+
+        while hue_current > 1.:
+            hue_current = hue_current - 1
+
+    randomguess_color = 'black'
 
     fancy_tasks = fancify_tasks(tasks)
     
@@ -65,6 +92,9 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
 
         # Plot the accuracies
         for d, data in enumerate(datas):
+            if (train_accuracy_name not in data.columns) or (val_accuracy_name not in data.columns) or (randomguess_name not in data.columns):
+                continue
+
             most_important = alphas[d] == 1.0
             last = (d + 1) == len(datas)
 
@@ -72,11 +102,11 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
             data_title = csv_titles[d]
 
             # Plot the accuracy
-            plt.plot(data[train_accuracy_name], label=f"{data_title} Training Accuracy", color=training_color, alpha=alphas[d], linestyle=linestyles[d])
-            plt.plot(data[val_accuracy_name], label=f"{data_title} Validation Accuracy", color=validation_color, alpha=alphas[d], linestyle=linestyles[d])
+            plt.plot(data[train_accuracy_name], label=f"{data_title} Training Accuracy", color=colors[d], alpha=alphas[d] * training_alpha_multiplier, linestyle='dashed')
+            plt.plot(data[val_accuracy_name], label=f"{data_title} Validation Accuracy", color=colors[d], alpha=alphas[d], linestyle='solid')
 
             if last:
-                plt.axhline(y=data[randomguess_name][0], linestyle='--', label=f"Random Guess", color=randomguess_color, alpha=alphas[d])
+                plt.axhline(y=data[randomguess_name][0], linestyle='dashdot', label=f"Random Guess", color=randomguess_color, alpha=alphas[d])
 
             if most_important:
                 if rectify_y_axis:
@@ -100,6 +130,9 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
         
         # Plot the losses
         for d, data in enumerate(datas):
+            if (train_loss_name not in data.columns) or (val_loss_name not in data.columns):
+                continue
+
             most_important = alphas[d] == 1.0
             last = (d + 1) == len(datas)
 
@@ -112,8 +145,8 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
             validation_loss = data[val_loss_name]
             validation_loss = validation_loss[np.isfinite(validation_loss)]
 
-            plt.plot(training_loss, label=f"{data_title} Training Loss", color=training_color, alpha=alphas[d], linestyle=linestyles[d])
-            plt.plot(validation_loss, label=f"{data_title} Validation Loss", color=validation_color, alpha=alphas[d], linestyle=linestyles[d])
+            plt.plot(training_loss, label=f"{data_title} Training Loss", color=colors[d], alpha=alphas[d] * training_alpha_multiplier, linestyle='dashed')
+            plt.plot(validation_loss, label=f"{data_title} Validation Loss", color=colors[d], alpha=alphas[d], linestyle='solid')
 
             if most_important and rectify_y_axis:
                 ceiling = np.max(training_loss) * 1.5
@@ -141,26 +174,213 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
         
     return
 
-"""
-def make_conditional_accuracy_bar_graphs(model_path, df, generator, tasks):
+
+def make_conditional_accuracy_matrix(model_path, tasktolabels_path, collapse_predictions, task='common:apparel_class', steps=1000):
+    with open(tasktolabels_path) as json_file:
+        task_to_labels = json.load(json_file)
+
+    task_aslist = [task]
+    df = multitask.get_multitask_subset(data_type='validation',
+                                        tasks=task_aslist,
+                                        randomize_missing_labels=False,
+                                        task_to_labels=task_to_labels,
+                                        verbose=0)[0]
+    generator = multitask.get_generators(None, df, task_aslist, batch_size=steps, shuffle=False)[1]
 
     model = keras.models.load_model(model_path)
 
-    if len(df) != generator.batch_size:
-        print("len(df) and generator.batch_size are not equal")
+    names = list(task_to_labels[task])
+    C = len(names)
 
+    # row is true, column is pred
+    matrix = np.zeros(shape=(C, C))
+    matrix_counts = np.zeros(shape=(C, C))
+
+    valid_func = lambda x: x != -1
 
     for data_batch, labels_batch in generator:
-        predicted_labels = model.predict(data_batch)
+        print("Getting data and labels...")
+        labels_batch = labels_batch[0]
+
+        # get % of each label
+        p = ""
+        presence = np.zeros(shape=C)
+        for l in range(-1, C, 1):
+            name = "missing"
+            if l >= 0:
+                name = names[l]
+
+            m = np.mean(labels_batch == l)
+            p = p + f"{name}: {m:.1%}; "
+
+            if l >= 0:
+                presence[l] = m
+
+        print(p)
+
+        labels = labels_batch
+        data = data_batch
+
         break
 
-    print(predicted_labels)
+    predicted_labels = model.predict(data)
 
-    #ncols = 2
-    #fig, axes = plt.subplots(nrows=np.ceil(len(tasks) / ncols), ncols=ncols)
+    # the model may be trained for more than one task. find the right one
+    # this can break if there is more than one task with the same amount of labels but that's a problem for future me.
+    # or never me
+    for t in range(len(predicted_labels)):
+        if len(predicted_labels[t].shape) < 2: break
 
-    #for a, ax in enumerate(axes):
-"""
+        if predicted_labels[t].shape[1] == C:
+            predicted_labels = predicted_labels[t]
+            break
+
+    pred_df = pd.DataFrame()
+
+    pred_df["y_true"] = labels
+
+    # print(labels)
+    # print(predicted_labels)
+
+    pred_df["y_pred"] = [pred for pred in predicted_labels]
+    pred_df["y_pred_sparse"] = pred_df["y_pred"].apply(lambda x: np.argmax(x))
+
+    is_valid = pred_df["y_true"].apply(valid_func)
+
+    pred_df = pred_df[is_valid]
+
+    predicted_labels = pred_df["y_pred"]
+    labels = pred_df["y_true"]
+
+    def collapse_distribution(pred):
+        sparse = np.argmax(pred)
+        pred = np.zeros(shape=len(pred))
+        pred[sparse] = 1.
+
+        return pred
+
+    if collapse_predictions:
+        predicted_labels = predicted_labels.apply(collapse_distribution)
+
+    for c in range(C):
+        mask = labels == c
+
+        if np.sum(mask) > 0:
+            y_pred = predicted_labels[mask]
+            y_pred = np.array(y_pred.to_list())
+
+            matrix[c, :] = matrix[c, :] + np.mean(y_pred, axis=0)
+            matrix_counts[c, :] = matrix_counts[c, :] + np.sum(y_pred, axis=0)
+
+    names_true = pd.Series(data=names, name="True")
+    names_pred = pd.Series(data=names, name="Prediction")
+    result = pd.DataFrame(data=matrix, index=names_true, columns=names_pred)
+    result_count = pd.DataFrame(data=matrix_counts, index=names_true, columns=names_pred, dtype=int)
+
+    print("Confusion Matrix (Row-Normalized)")
+    print(result)
+
+    print("Confusion Matrix (Absolute counts)")
+    print(result_count)
+
+    print("Precision, recall and F1 scores:")
+
+    precisions = np.zeros(shape=C)
+    recalls = np.zeros(shape=C)
+    f1scores = np.zeros(shape=C)
+
+    precision_recall_df = pd.DataFrame(index=names, columns=["Precision", "Recall", "F1 Score"])
+
+    for c in range(C):
+        precisions[c] = matrix_counts[c, c] / np.sum(matrix_counts[:, c])
+        recalls[c] = matrix_counts[c, c] / np.sum(matrix_counts[c, :])
+
+        f1scores[c] = 2. * precisions[c] * recalls[c] / (precisions[c] + recalls[c])
+
+        print(f"{names[c]}: Precision {precisions[c]:.1%}; Recall {recalls[c]:.1%}; F1 Score {f1scores[c]:.2f}")
+
+    precision_recall_df["Precision"] = precisions
+    precision_recall_df["Recall"] = recalls
+    precision_recall_df["F1 Score"] = f1scores
+
+    p = np.mean(precisions)
+    r = np.mean(recalls)
+    f = np.mean(f1scores)
+
+    precision_recall_df.loc["Mean", ["Precision", "Recall", "F1 Score"]] = [p, r, f]
+
+    # print(precision_recall_df)
+
+    print("")
+    print(f"Mean Precision: {p:.1%}; Mean Recall: {r:.1%}")
+
+    print("")
+    print(f"Overall F1 Score (Average of F1 Scores): {f:.2f}")
+
+    print(f"Overall F1 Score (F1 Score of averages): {2. * p * r / (p + r):.2f}")
+
+    for norm in ('true', 'pred', None):
+        values_format = ".0%"
+        if norm is None:
+            values_format = None
+
+        confusion_matrix.from_predictions(y_true=pred_df["y_true"],
+                                          y_pred=pred_df["y_pred_sparse"],
+                                          normalize=norm,
+                                          labels=list(range(C)),
+                                          display_labels=names,
+                                          values_format=values_format,
+                                          cmap='Blues',
+                                          include_values=(C < 7))
+
+    plt.show()
+
+    x = presence
+    y = [matrix[c, c] for c in range(C)]
+
+    plt.scatter(
+        x = x,
+        y = y,
+        label="Points"
+    )
+
+    log_x = pd.Series(np.log(x))
+    log_y = pd.Series(np.log(y))
+
+    mask = ~log_x.isna() & ~log_y.isna() & pd.Series(x).apply(lambda u: u > 0) & pd.Series(y).apply(lambda u: u > 0)
+    log_x = log_x[mask]
+    log_y = log_y[mask]
+
+    log_x = np.array(log_x.to_list()).reshape(-1, 1)
+    log_y = np.array(log_y.to_list())
+
+    reg = LinearRegression().fit(log_x, log_y)
+
+    grid = np.linspace(start=0.05, stop=1, num=50).reshape(-1, 1)
+    fittedline = np.exp(reg.predict(np.log(grid)))
+
+    plt.plot(grid, fittedline, label="Best Fit", alpha=0.5, linestyle="--")
+
+    plt.title("Presence in dataset VS Accuracy")
+    plt.xlabel("Presence")
+    plt.xlim((0., 1.))
+    xlocs, xlabels = plt.xticks()
+    xlocs = np.arange(start=0., stop=1., step=0.2)
+    xlabels = [f"{loc:.0%}" for loc in xlocs]
+    plt.xticks(xlocs, xlabels)
+
+    plt.ylabel("Accuracy")
+    plt.ylim((0., 1.))
+    ylocs, ylabels = plt.yticks()
+    ylocs = np.arange(start=0., stop=1., step=0.2)
+    ylabels = [f"{loc:.0%}" for loc in ylocs]
+    plt.yticks(ylocs, ylabels)
+    plt.legend()
+
+    plt.show()
+
+    return result
+
 
 """
 csv_path = 'shoeMultiTaskModel_trainingLog (3).csv'

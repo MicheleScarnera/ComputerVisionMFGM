@@ -14,7 +14,15 @@ import time
 import warnings
 
 
-def save_image_file(path,url_list, verbose = 0):
+def save_image_file(path, url_list, verbose = 0):
+    """
+    Attempt to download an image, from a list of URLs, to a path.
+
+    :param path: Path to save the image to.
+    :param url_list: List of URL mirrors. Can also be a single URL.
+    :param verbose: Level of verbosity
+    :return:
+    """
     if type(url_list) is str:
         url_list = [url_list]
 
@@ -58,6 +66,12 @@ def save_image_file(path,url_list, verbose = 0):
 
 
 def purge_bad_images(data_type='training'):
+    """
+    Deletes every image that cannot be loaded by PIL.Image
+
+    :param data_type: Images to look at
+    :return: None
+    """
     warnings.filterwarnings("error")
 
     path = PARAMS.IMAGES_filepath[data_type]
@@ -120,24 +134,25 @@ def import_dataset_from_json(data_type='training'):
         df['imageId'] = df['imageId'].astype(dtype=str)
         df['taskId'] = df['taskId'].astype(dtype=str)
         df['labelId'] = df['labelId'].astype(dtype=str)
-
-        # df['imageData'] = tf.convert_to_tensor(df['imageData'])
         return df
     except:
         print(f"Error, returning None")
         return None
 
 
-def kill_rare_labels(data, task_name, threshold, label_map=None, precalculated_bad_labels = None, verbose=1):
+def kill_rare_labels(data, task_name, threshold, label_map=None, precalculated_bad_labels=None, verbose=1):
     """
     Originally written by Michelle Luijten
 
-    :param data:
-    :param task_name:
-    :param threshold:
-    :param label_map:
-    :param precalculated_bad_labels:
-    :return:
+    Given a task name and a percentage threshold, removes every label of that task that is present less often than the threshold, and groups them into the "other" label.
+
+    :param data: DataFrame
+    :param task_name: Name of the task
+    :param threshold: Threshold under which uncommon labels are grouped into "other"
+    :param label_map: If already computed, you can provide the label id to label name map.
+    :param precalculated_bad_labels: In the case of validation sets, one must already have computed the bad labels on the training set, and must provided here
+    :param verbose: Level of verbosity
+    :return: (DataFrame, list) tuple with the new dataset and the label IDs that were removed
     """
     if label_map is None:
         label_map = MISC.get_label_map()
@@ -178,7 +193,7 @@ def import_rawdata(
         attempt_downloading_images=True,
         delete_orphan_entries=True,
         add_common_tasks=True,
-        kill_common_task_label_frequency_threshold=0.01,
+        kill_common_task_label_frequency_threshold=0.02,
         precalculated_bad_labels=None,
         add_apparel_class_as_task=True,
         save_json=True,
@@ -197,7 +212,7 @@ def import_rawdata(
     :param add_apparel_class_as_task: If true, the apparel class is added as a task
     :param save_json: If true, the [data_type]Data.json file is saved.
     :param verbose: Level of verbosity.
-    :return: a pandas.DataFrame
+    :return: (DataFrame, list) tuple with the new dataset and the label IDs that were removed
     """
     folder_path = PARAMS.IMAGES_filepath[data_type]
     if verbose > 0: print(f"### IMPORTING DATA INTO {folder_path} ###\n")
@@ -301,7 +316,7 @@ NOTE: If you want to download more images than you have locally, delete the pres
 
     # which image files are present?
     # (i tried doing this with pandas.apply() instead of this "dumber" approach,
-    # but i don't think os.path.isfile() really works in there
+    # but i don't think os.path.isfile() really works in there)
     possible_image_ids = np.unique(df['imageId'])
     was_found = dict()
     for id in possible_image_ids:
@@ -312,7 +327,7 @@ NOTE: If you want to download more images than you have locally, delete the pres
     if (not freeloader_mode) and verbose > 1: print(f"Before downloading any new images, {np.sum(image_found)} images were present")
 
     if (not freeloader_mode) and attempt_downloading_images:
-        # TODO: iterating over df and not df_images is inefficient. however, df_images does not have the apparelClass column.
+        # iterating over df and not df_images is inefficient. however, df_images does not have the apparelClass column.
         for i, row in df[~image_found].iterrows():
             image_path = image_path_func(row['imageId'])  # {row['apparelClass']}/
 
@@ -442,7 +457,7 @@ def get_dataset(data_type='training', verbose = 1) -> pd.DataFrame:
     This dataframe is stored in the [...]Data.json file.
     If the file is not found, images are downloaded and the file is created.
 
-    :param data_type: Either 'training' or 'validation'. 'test' is currently not supported
+    :param data_type: Either 'training' or 'validation'
     :param verbose: Level of verbosity.
     :return: a pandas.DataFrame
     """
@@ -457,21 +472,3 @@ def get_dataset(data_type='training', verbose = 1) -> pd.DataFrame:
 
     return dataset
 
-#import_rawdata()
-#import_rawdata('validation')
-#Data = get_dataset()
-
-"""
-print(f"First row:\n{Data.iloc[0]}")
-
-print(f"Testing import...")
-ImportedData = import_dataset_from_json()
-
-print(f"First row:\n{ImportedData.iloc[0]}")
-
-taskMap = get_task_map()
-print(f"task map:\n{taskMap}")
-
-apparelClassMap = get_apparel_class_map(taskMap)
-print(f"apparel class map: {apparelClassMap}")
-"""

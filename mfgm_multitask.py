@@ -15,29 +15,31 @@ from keras.callbacks import CSVLogger, EarlyStopping
 
 np.random.seed(8000)
 
+
 def get_multitask_subset(data_type='training',
                          apparel_class='all',
                          tasks=('shoe:gender', 'shoe:age', 'shoe:color'),
                          randomize_missing_labels=True,
                          modelname="NAME_MISSING",
                          micro_dataset=False,
+                         task_to_labels=None,
                          verbose=2):
     """
-    NOTE: this can be generalized for other apparel classes. All of the variables that would need to be changed
-    (i.e. become arguments of a more general function) have been defined right after this comment
+    Reformats the dataset in a more convenient format for the neural network.
 
-    :return: dataset, number_of_labels
+    :param data_type: Either 'training' or 'validation'
+    :param apparel_class: A specific task among ('shoe', 'dress', 'outerwear', 'pants'). If it's none of those, all apparel classes are used
+    :param tasks: Which tasks the model will have
+    :param randomize_missing_labels: If true, missing values are assigned a random label. If false, they are assigned -1
+    :param modelname: The name of the model, which will be used in the path it will be saved to
+    :param micro_dataset: If true, the dataset size is decreased by 10 times. Use this only when testing things that are slowed down by the dataset size
+    :param task_to_labels: If already computed, you can provide the task-name to labels-list map.
+    :param verbose: Level of verbosity
+    :return: (dataset, number_of_labels, fill_rate) tuple with the formatted dataset, how many labels each task has, and how many non-missing values they have (in proportion)
     """
-    # TO-BE-GENERALIZED VARIABLES
-
-    # all shoe tasks: ['shoe:gender', 'shoe:age', 'shoe:color', 'shoe:up height', 'shoe:type', 'shoe:closure type', 'shoe:toe shape', 'shoe:heel type', 'shoe:decoration', 'shoe:flat type', 'shoe:material', 'shoe:back counter type', 'shoe:pump type', 'shoe:boot type']
-    # 'shoe:boot type' and 'shoe:pump type' have been removed since they only have one label in the training set
-
-    # TO-BE-GENERALIZED VARIABLES OVER
 
     if verbose > 0:
         print(f"### CURATED DATASET FOR APPAREL CLASS '{apparel_class}' ({data_type}) ###")
-
 
     if verbose > 1:
         print(f"Getting task-to-labels map...")
@@ -45,28 +47,21 @@ def get_multitask_subset(data_type='training',
     dataset = None
 
     # task-to-labels map
-    if data_type != 'training':
-        rawdata = iM.get_dataset('training')
+    if task_to_labels is None:
+        if data_type != 'training':
+            rawdata = iM.get_dataset('training')
 
-        """
-                iM.import_rawdata(data_type='training',
-                                                    delete_orphan_entries=False,
-                                                    save_json=False,
-                                                    attempt_downloading_images=False,
-                                                    verbose=0)
-                """
+            task_to_labels = MISC.get_task_to_all_values_map(training_dataset=rawdata)
+        else:
+            dataset = iM.get_dataset(data_type)
 
-        task_to_labels = MISC.get_task_to_all_values_map(training_dataset=rawdata)
-    else:
-        dataset = iM.get_dataset(data_type)
-
-        task_to_labels = MISC.get_task_to_all_values_map(training_dataset=dataset)
+            task_to_labels = MISC.get_task_to_all_values_map(training_dataset=dataset)
 
     # remove tasks not of this apparel class from task_to_labels
     # i.e. remove 'dress:length' or 'shoe:pump type' from the shoe tasks we're interested in
     all_tasks = MISC.get_tasks()
     for generic_task in all_tasks:
-        if generic_task not in tasks:
+        if generic_task not in tasks and generic_task in task_to_labels.keys():
             task_to_labels.pop(generic_task)
 
     number_of_labels = []
@@ -75,7 +70,8 @@ def get_multitask_subset(data_type='training',
 
     # get dataset of only the relevant apparel class
     print(f"Importing {data_type} dataset...")
-    if dataset is None: dataset = iM.get_dataset(data_type)
+    if dataset is None:
+        dataset = iM.get_dataset(data_type)
 
     if apparel_class in ('shoe', 'dress', 'outerwear', 'pants'):
         dataset = dataset[dataset['apparelClass'] == apparel_class]
@@ -84,7 +80,7 @@ def get_multitask_subset(data_type='training',
 
     if verbose > 1:
         print("PRINTING DATASET... (first 5 entries)")
-        print(dataset.iloc[0:5,:])
+        print(dataset.iloc[0:5, :])
 
         arbitraryimage_id = dataset.iloc[len(dataset) // 2]['imageId']
         print("FINDING FEATURES OF ONE IMAGE...")
@@ -110,14 +106,12 @@ def get_multitask_subset(data_type='training',
 
     if verbose > 1:
         print("PRINTING REFORMATTED DATASET... (first 5 entries)")
-        print(dataset.iloc[0:5,:])
+        print(dataset.iloc[0:5, :])
         print("FINDING FEATURES OF ONE IMAGE AFTER REFORMATTING...")
 
         pd.set_option('display.max_columns', None)
         print(dataset[dataset['imageId'] == arbitraryimage_id])
         pd.reset_option('display.max_columns')
-
-        #print(dataset[dataset["imageId"] == "4"])
 
     # calculate tasks' fill rate
     fill_rate = dict()
@@ -144,7 +138,7 @@ def get_multitask_subset(data_type='training',
         print("TASK FILL RATE AND AMOUNT OF LABELS:")
         print(task_info)
 
-        print(f"\"Recommended\" order in which the 'tasks' variable should be: {list(reversed(task_info.index))}") #[{', '.join(reversed(task_info.index))}]
+        print(f"\"Recommended\" order in which the 'tasks' variable should be: {list(reversed(task_info.index))}")
 
     # change labels from strings ('high') to ints (i.e. 3)
     if verbose > 1:
@@ -154,7 +148,7 @@ def get_multitask_subset(data_type='training',
         try:
             return task_to_labels[t].index(x)
         except ValueError:
-            if randomize_missing_labels: # data_type == 'training' and
+            if randomize_missing_labels:
                 return np.random.choice(range(number_of_labels[j]))
 
             return -1
@@ -208,6 +202,7 @@ def get_untrained_multitask_model(
         maxpooling_size = 4,
         dropout_rate = 0.5,
         private_dense_layers = False,
+        reduced_parameters_for_public = False,
         gamma = 0.95,
         tasks_arg = ('placeholder_1', 'placeholder_2', 'placeholder_3'),
         number_of_labels = (2,2,4),
@@ -253,8 +248,15 @@ def get_untrained_multitask_model(
     # main_branch = tf.keras.layers.BatchNormalization()(main_branch)
     if not private_dense_layers:
         # in the "~1.4mln parameters" scenario, we have 160 and 128 here
-        main_branch = tf.keras.layers.Dense(384, activation='relu', name="dense_main_1")(main_branch)
-        main_branch = tf.keras.layers.Dense(384, activation='relu', name="dense_main_2")(main_branch)
+        if reduced_parameters_for_public:
+            a = 160
+            b = 128
+        else:
+            a = 384
+            b = 384
+
+        main_branch = tf.keras.layers.Dense(a, activation='relu', name="dense_main_1")(main_branch)
+        main_branch = tf.keras.layers.Dense(b, activation='relu', name="dense_main_2")(main_branch)
 
     main_branch = tf.keras.layers.Dense(128, activation='tanh', name="dense_main_last")(main_branch)
 
@@ -317,15 +319,16 @@ def get_untrained_multitask_model(
 
     return model, task_reformat
 
-def get_generators(df_train, df_validation, tasks, image_size=256, batch_size=32):
+def get_generators(df_train, df_validation, tasks, image_size=256, batch_size=32, shuffle=True):
     image_datagen = ImageDataGenerator(
         rescale=1. / 255,
         rotation_range=45,
         width_shift_range=0.25,
         height_shift_range=0.25,
+        zoom_range=0.2,
         fill_mode='nearest',
         horizontal_flip=True,
-        vertical_flip=True,
+        vertical_flip=False,
     )
 
     if df_train is not None:
@@ -337,7 +340,8 @@ def get_generators(df_train, df_validation, tasks, image_size=256, batch_size=32
             # classes=classes_map,
             target_size=(image_size, image_size),
             batch_size=batch_size,
-            class_mode='multi_output'
+            class_mode='multi_output',
+            shuffle=shuffle
         )
     else:
         train_generator = None
@@ -351,7 +355,8 @@ def get_generators(df_train, df_validation, tasks, image_size=256, batch_size=32
             # classes=classes_map,
             target_size=(image_size, image_size),
             batch_size=batch_size,
-            class_mode='multi_output'
+            class_mode='multi_output',
+            shuffle=shuffle
         )
     else:
         validation_generator = None

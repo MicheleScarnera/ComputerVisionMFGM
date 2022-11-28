@@ -14,6 +14,7 @@ def run():
     randomize_missing_labels = False
 
     private_dense_layers = False
+    reduced_parameters_for_public = False
     batch_size = 128
     epochs = 20
 
@@ -49,6 +50,7 @@ def run():
         tasks_arg=tasks,
         number_of_labels=number_of_labels,
         private_dense_layers=private_dense_layers,
+        reduced_parameters_for_public=reduced_parameters_for_public,
         verbose=1)
 
     # hypothesis: batch_size and epochs need to be VERY high,
