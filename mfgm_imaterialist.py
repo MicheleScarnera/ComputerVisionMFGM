@@ -193,7 +193,7 @@ def import_rawdata(
         attempt_downloading_images=True,
         delete_orphan_entries=True,
         add_common_tasks=True,
-        kill_common_task_label_frequency_threshold=0.02,
+        kill_common_task_label_frequency_threshold=0.01,
         precalculated_bad_labels=None,
         add_apparel_class_as_task=True,
         save_json=True,

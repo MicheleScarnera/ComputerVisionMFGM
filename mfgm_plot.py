@@ -71,9 +71,7 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
         colors.append(new_color)
 
         hue_current = hue_current + hue_increment
-
-        while hue_current > 1.:
-            hue_current = hue_current - 1
+        hue_current = hue_current - np.floor(hue_current)
 
     randomguess_color = 'black'
 
@@ -319,14 +317,14 @@ def make_conditional_accuracy_matrix(model_path, tasktolabels_path, collapse_pre
 
     print(f"Overall F1 Score (F1 Score of averages): {2. * p * r / (p + r):.2f}")
 
-    for norm in ('true', 'pred', None):
+    for norm in [None]: # ('true', 'pred', None)
         values_format = ".0%"
         if norm is None:
             values_format = None
 
         confusion_matrix.from_predictions(y_true=pred_df["y_true"],
                                           y_pred=pred_df["y_pred_sparse"],
-                                          normalize=norm,
+                                          normalize=None,
                                           labels=list(range(C)),
                                           display_labels=names,
                                           values_format=values_format,

@@ -3,25 +3,18 @@ import mfgm_multitask as mt
 import mfgm_parameters as PARAMS
 from datetime import datetime
 
-def run():
-    lightning_round = False
+def run(batch_size = 128,
+        epochs = 20,
+        private_dense_layers=False,
+        reduced_parameters_for_public = False,
+        apparel_class = 'all',
+        tasks = ('common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender'),
+        randomize_missing_labels = False,
+        purge_bad_images = True,
+        micro_dataset = False
+        ):
 
-    purge = not lightning_round
-    micro_dataset = lightning_round
-
-    apparel_class = 'all'
-    tasks = ['common:apparel_class'] # ['common:apparel_class', 'common:color', 'common:material', 'common:age', 'common:gender']
-    randomize_missing_labels = False
-
-    private_dense_layers = False
-    reduced_parameters_for_public = False
-    batch_size = 128
-    epochs = 20
-
-    if lightning_round:
-        epochs = 2
-
-    if purge:
+    if purge_bad_images:
         print("Running")
         im.purge_bad_images('training')
         im.purge_bad_images('validation')
@@ -71,4 +64,4 @@ def run():
         verbose=1)
 
 
-run()
+# run()

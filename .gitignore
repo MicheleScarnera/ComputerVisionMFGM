@@ -1,10 +1,5 @@
-
-*.pyc
 garbage_can.py
 garbage_can_2.py
-.idea/ComputerVisionMFGM.iml
-.idea/misc.xml
-*.jpg
 training.log
 trainingData.csv
 trainingData.json
@@ -12,6 +7,11 @@ validationData.csv
 validationData.json
 trainingData.csv
 trainingData.json
-.idea/ComputerVisionMFGM.iml
-.idea/misc.xml
-trainedModels/multiTaskModel_tasktolabelsmap.json
+.idea
+__pycache__
+finalModels
+trainedModels
+logs
+graphs
+train_images
+validation_images
