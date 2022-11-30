@@ -9,6 +9,7 @@ trainingData.csv
 trainingData.json
 .idea
 __pycache__
+.ipynb_checkpoints
 finalModels
 trainedModels
 logs
