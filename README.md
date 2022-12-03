@@ -10,7 +10,7 @@ In order to run, it requires:
 - `keras`/`tensorflow`
 - `scipy`
 
-The plotting functions require `matplotlib` and `sklearn`.
+The `mfgm_plot.py` functions require `matplotlib` and `sklearn`.
 
 ## Execution
 
