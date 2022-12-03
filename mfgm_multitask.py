@@ -113,6 +113,14 @@ def get_multitask_subset(data_type='training',
         print(dataset[dataset['imageId'] == arbitraryimage_id])
         pd.reset_option('display.max_columns')
 
+        print("FREQUENCY OF LABELS:")
+        for task in tasks:
+            print(f"{task}:")
+            for label in task_to_labels[task]:
+                count = np.sum(dataset[task] == label)
+                percent = count / len(dataset)
+                print(f" - {label}: {count} ({percent:.1%})")
+
     # calculate tasks' fill rate
     fill_rate = dict()
     for task in tasks:

@@ -15,34 +15,23 @@ from sklearn.linear_model import LinearRegression
 import mfgm_multitask as multitask
 sns.set_theme()
 
+
 def fancify_tasks(tasks):
     return [string.capwords(task.split(':')[1].replace("_", " ")) for task in tasks]
 
-def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha_multiplier=None, training_alpha_multiplier = 0.5, maxepochs=None, rectify_y_axis=True):
+
+def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None, training_alpha_multiplier = 0.5, maxepochs=None, rectify_y_axis=True):
     """
 
-    :param csv_paths: path to csv
+    :param csv_paths: paths to csv
     :param csv_titles: good-looking titles for the csvs
     :param tasks: for example ['shoe:up height', 'shoe:age', 'shoe:color']. it will make plots of these tasks (and of the overall loss/accuracy metrics)
-    :param linestyles: if specified, allows linestyles to be chosen.
     :param alpha_multiplier: by how much opacity increases for every subsequent dataset. the most opaque dataset will have alpha equal to 1.
     :param training_alpha_multiplier: multiplier for the training loss/accuracy opacity.
     :param maxepochs: set the maximum number of epochs to show.
     :param rectify_y_axis: If true, the y axes' ranges are not matplotlib's defaults.
     :return:
     """
-
-    if linestyles is None:
-        l = ((0, (3, 1)), (0, (3, 1, 1, 1)), (0, (3, 1, 1, 1, 1, 1)), (0, (3, 1, 1, 1, 1, 1, 1, 1)))
-
-        linestyles = []
-        last_i = len(csv_paths) - 1
-
-        for i in range(len(csv_paths)):
-            if i == last_i:
-                linestyles.append('solid')
-            else:
-                linestyles.append(l[i % len(l)])
 
     if alpha_multiplier is None:
         alpha_multiplier = 1. #(1. - 1. / len(csv_paths)) ** (-2.)
@@ -173,7 +162,16 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, linestyles=None, alpha
     return
 
 
-def make_conditional_accuracy_matrix(model_path, tasktolabels_path, collapse_predictions, task='common:apparel_class', steps=1000):
+def make_conditional_accuracy_matrix(model_path, tasktolabels_path, collapse_predictions=True, task='common:apparel_class', steps=1000):
+    """
+
+    :param model_path: Path in which the model resides.
+    :param tasktolabels_path: The task-to-labels JSON that maps the integer predictions to label names.
+    :param collapse_predictions: Whether a prediction should collapse into one-hot encoding (i.e. [0, 0, 1, 0]) or should be kept as a distribution (i.e. [0.1, 0.2, 0.6, 0.1])
+    :param task: Which task to consider.
+    :param steps: How many validation images should be used
+    :return: None
+    """
     with open(tasktolabels_path) as json_file:
         task_to_labels = json.load(json_file)
 
