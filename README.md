@@ -10,8 +10,8 @@ In order to run, it requires:
 - `keras`/`tensorflow`
 - `scipy`
 
-The `mfgm_plot.py` functions require `matplotlib` and `sklearn`.
+The `mfgm_plot.py` functions require `matplotlib`, `scikit-learn` and `seaborn`.
 
 ## Execution
 
-A model can be trained by either running the `Run.py` script or the `Run.ipynb` notebook.
+A model can be trained by either running the `Run.py` script or the `Run.ipynb` notebook (recommended).

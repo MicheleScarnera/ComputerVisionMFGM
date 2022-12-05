@@ -20,7 +20,7 @@ def fancify_tasks(tasks):
     return [string.capwords(task.split(':')[1].replace("_", " ")) for task in tasks]
 
 
-def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None, training_alpha_multiplier = 0.5, maxepochs=None, rectify_y_axis=True):
+def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None, training_alpha_multiplier = 0.5, maxepochs=None, rectify_y_axis=False):
     """
 
     :param csv_paths: paths to csv
@@ -32,6 +32,12 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None,
     :param rectify_y_axis: If true, the y axes' ranges are not matplotlib's defaults.
     :return:
     """
+
+    if len(csv_titles) < len(csv_paths):
+        print("There are not enough titles for all the paths that have been given. csv_titles will be padded with '???'s.")
+
+        while len(csv_titles) < len(csv_paths):
+            csv_titles.append("???")
 
     if alpha_multiplier is None:
         alpha_multiplier = 1. #(1. - 1. / len(csv_paths)) ** (-2.)
@@ -162,7 +168,7 @@ def make_training_log_plots(csv_paths, csv_titles, tasks, alpha_multiplier=None,
     return
 
 
-def make_conditional_accuracy_matrix(model_path, tasktolabels_path, collapse_predictions=True, task='common:apparel_class', steps=1000):
+def make_confusion_matrix(model_path, tasktolabels_path, collapse_predictions=True, task='common:apparel_class', steps=3000, show_useless_scatter_plot=False):
     """
 
     :param model_path: Path in which the model resides.
@@ -331,51 +337,52 @@ def make_conditional_accuracy_matrix(model_path, tasktolabels_path, collapse_pre
 
     plt.show()
 
-    x = presence
-    y = [matrix[c, c] for c in range(C)]
+    if show_useless_scatter_plot:
+        x = presence
+        y = [matrix[c, c] for c in range(C)]
 
-    plt.scatter(
-        x = x,
-        y = y,
-        label="Points"
-    )
+        plt.scatter(
+            x = x,
+            y = y,
+            label="Points"
+        )
 
-    log_x = pd.Series(np.log(x))
-    log_y = pd.Series(np.log(y))
+        log_x = pd.Series(np.log(x))
+        log_y = pd.Series(np.log(y))
 
-    mask = ~log_x.isna() & ~log_y.isna() & pd.Series(x).apply(lambda u: u > 0) & pd.Series(y).apply(lambda u: u > 0)
-    log_x = log_x[mask]
-    log_y = log_y[mask]
+        mask = ~log_x.isna() & ~log_y.isna() & pd.Series(x).apply(lambda u: u > 0) & pd.Series(y).apply(lambda u: u > 0)
+        log_x = log_x[mask]
+        log_y = log_y[mask]
 
-    log_x = np.array(log_x.to_list()).reshape(-1, 1)
-    log_y = np.array(log_y.to_list())
+        log_x = np.array(log_x.to_list()).reshape(-1, 1)
+        log_y = np.array(log_y.to_list())
 
-    reg = LinearRegression().fit(log_x, log_y)
+        reg = LinearRegression().fit(log_x, log_y)
 
-    grid = np.linspace(start=0.05, stop=1, num=50).reshape(-1, 1)
-    fittedline = np.exp(reg.predict(np.log(grid)))
+        grid = np.linspace(start=0.05, stop=1, num=50).reshape(-1, 1)
+        fittedline = np.exp(reg.predict(np.log(grid)))
 
-    plt.plot(grid, fittedline, label="Best Fit", alpha=0.5, linestyle="--")
+        plt.plot(grid, fittedline, label="Best Fit", alpha=0.5, linestyle="--")
 
-    plt.title("Presence in dataset VS Accuracy")
-    plt.xlabel("Presence")
-    plt.xlim((0., 1.))
-    xlocs, xlabels = plt.xticks()
-    xlocs = np.arange(start=0., stop=1., step=0.2)
-    xlabels = [f"{loc:.0%}" for loc in xlocs]
-    plt.xticks(xlocs, xlabels)
+        plt.title("Presence in dataset VS Accuracy")
+        plt.xlabel("Presence")
+        plt.xlim((0., 1.))
+        xlocs, xlabels = plt.xticks()
+        xlocs = np.arange(start=0., stop=1., step=0.2)
+        xlabels = [f"{loc:.0%}" for loc in xlocs]
+        plt.xticks(xlocs, xlabels)
 
-    plt.ylabel("Accuracy")
-    plt.ylim((0., 1.))
-    ylocs, ylabels = plt.yticks()
-    ylocs = np.arange(start=0., stop=1., step=0.2)
-    ylabels = [f"{loc:.0%}" for loc in ylocs]
-    plt.yticks(ylocs, ylabels)
-    plt.legend()
+        plt.ylabel("Accuracy")
+        plt.ylim((0., 1.))
+        ylocs, ylabels = plt.yticks()
+        ylocs = np.arange(start=0., stop=1., step=0.2)
+        ylabels = [f"{loc:.0%}" for loc in ylocs]
+        plt.yticks(ylocs, ylabels)
+        plt.legend()
 
-    plt.show()
+        plt.show()
 
-    return result
+    return result_count
 
 
 """
