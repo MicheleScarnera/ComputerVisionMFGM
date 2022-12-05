@@ -13,9 +13,9 @@ In order to run, it requires:
 
 The `mfgm_plot.py` functions require `matplotlib`, `scikit-learn` and `seaborn`.
 
-If you already have the images of the aforementioned dataset, please place them in the folders `train_images` and `validation_images`, inside the root folder of this project. Otherwise, images will be attempted to be downloaded from the internet, mainly by using the `mfgm_imaterialist.py` script and the `save_image_file(...)` function inside it.
-
 ## Execution
+
+If you already have the images of the aforementioned dataset, please place them in the folders `train_images` and `validation_images`, inside the root folder of this project. Otherwise, images will be attempted to be downloaded from the internet, mainly by using the `mfgm_imaterialist.py` script and the `save_image_file(...)` function inside it.
 
 A model can be trained, and plots be made, by either running the `Run.py` script or the `Run.ipynb` notebook (recommended).
 
